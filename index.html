@@ -2607,8 +2607,8 @@ function loadObject(key) {
   compView.content = stack.group;
   compAnchors = stack.anchors;
 
-  const compDimLines = buildDimensionLines(stack.group);
-  compView.dimGroup.add(compDimLines);
+  // (Composition view does not get dimension lines — the cube stack's
+  // dimensions are arbitrary visual encodings, not informative measurements.)
 
   const fb = bbox(formGroup);
   const sz = Math.max(
