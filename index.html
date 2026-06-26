@@ -1,0 +1,3189 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1" />
+<title>Materia — Object Composition Viewer</title>
+
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=Bricolage+Grotesque:opsz,wght@12..96,300;12..96,400;12..96,600;12..96,800&family=JetBrains+Mono:wght@300;400;500;600&display=swap" rel="stylesheet">
+
+<style>
+  :root {
+    --bg:        #0a0a0c;
+    --bg-soft:   #131318;
+    --panel:     #17171c;
+    --line:      #2a2a32;
+    --line-soft: #1c1c22;
+    --ink:       #e6dfc8;
+    --ink-dim:   #8a8377;
+    --ink-faint: #4a463f;
+    --accent:    #d8b85a;
+    --warn:      #c44e3d;
+    --display: 'Bricolage Grotesque', serif;
+    --mono: 'JetBrains Mono', ui-monospace, monospace;
+  }
+
+  * { box-sizing: border-box; margin: 0; padding: 0; }
+  html, body { height: 100%; overflow: hidden; }
+
+  body {
+    background: var(--bg);
+    color: var(--ink);
+    font-family: var(--mono);
+    font-size: 13px;
+    line-height: 1.4;
+    display: flex;
+    flex-direction: column;
+    background-image:
+      linear-gradient(var(--line-soft) 1px, transparent 1px),
+      linear-gradient(90deg, var(--line-soft) 1px, transparent 1px);
+    background-size: 64px 64px, 64px 64px;
+  }
+
+  /* ---------- Header ---------- */
+  header {
+    border-bottom: 1px solid var(--line);
+    padding: 14px 22px 12px;
+    display: grid;
+    grid-template-columns: 1fr auto;
+    align-items: end;
+    gap: 24px;
+    background: linear-gradient(180deg, rgba(20,20,24,.96), rgba(10,10,12,.96));
+  }
+  .brand { display: flex; align-items: baseline; gap: 14px; }
+  .brand .mark {
+    font-family: var(--display);
+    font-weight: 800;
+    font-size: 32px;
+    letter-spacing: -0.02em;
+    line-height: 1;
+    color: var(--ink);
+  }
+  .brand .mark::after {
+    content: '';
+    display: inline-block;
+    width: 6px; height: 6px;
+    background: var(--accent);
+    margin-left: 6px;
+    transform: translateY(-12px);
+    border-radius: 1px;
+  }
+  .brand .tag {
+    color: var(--ink-dim);
+    font-size: 11px;
+    letter-spacing: 0.18em;
+    text-transform: uppercase;
+  }
+
+  .toolbar { display: flex; gap: 10px; align-items: center; flex-wrap: wrap; }
+  .field { display: flex; flex-direction: column; gap: 4px; }
+  .field label {
+    font-size: 9px;
+    letter-spacing: 0.2em;
+    text-transform: uppercase;
+    color: var(--ink-faint);
+  }
+  select, .btn {
+    background: var(--panel);
+    color: var(--ink);
+    border: 1px solid var(--line);
+    padding: 7px 11px;
+    font-family: var(--mono);
+    font-size: 12px;
+    border-radius: 2px;
+    cursor: pointer;
+    transition: border-color .15s, color .15s, background .15s;
+  }
+  select optgroup {
+    background: var(--bg-soft);
+    color: var(--accent);
+    font-style: normal;
+    font-weight: 600;
+    font-family: var(--display);
+    font-size: 11px;
+    letter-spacing: 0.12em;
+    text-transform: uppercase;
+  }
+  select option {
+    background: var(--panel);
+    color: var(--ink);
+    font-style: normal;
+    font-family: var(--mono);
+    font-weight: 400;
+  }
+  select:hover, .btn:hover { border-color: var(--ink-dim); }
+  .btn { display: inline-flex; align-items: center; gap: 8px; }
+  .btn[aria-pressed="true"] { border-color: var(--accent); color: var(--accent); }
+  .btn .dot {
+    width: 7px; height: 7px; border-radius: 50%;
+    background: var(--ink-faint);
+    transition: background .15s;
+  }
+  .btn[aria-pressed="true"] .dot { background: var(--accent); }
+  .seg { display: inline-flex; border: 1px solid var(--line); border-radius: 2px; overflow: hidden; }
+  .seg button {
+    background: transparent; border: 0;
+    color: var(--ink-dim);
+    padding: 7px 11px;
+    font-family: var(--mono); font-size: 12px;
+    cursor: pointer;
+  }
+  .seg button.active { background: var(--ink); color: var(--bg); }
+
+  /* ---------- Stage (single canvas + two overlay viewports) ---------- */
+  main#stage {
+    flex: 1;
+    position: relative;
+    min-height: 0;
+    border-bottom: 1px solid var(--line);
+    background:
+      radial-gradient(ellipse 80% 60% at 50% 50%, #15151b 0%, #0a0a0c 75%);
+  }
+  #render-canvas {
+    position: absolute; inset: 0;
+    width: 100%; height: 100%;
+    display: block;
+    pointer-events: none;
+  }
+  .viewport {
+    position: absolute;
+    top: 0; bottom: 0;
+    width: 50%;
+    overflow: hidden;
+  }
+  #vp-form { left: 0; border-right: 1px solid var(--line); }
+  #vp-comp { right: 0; }
+
+  .vp-overlay {
+    position: absolute; inset: 0;
+    z-index: 1;
+    cursor: grab;
+  }
+  .vp-overlay:active { cursor: grabbing; }
+
+  .vp-svg {
+    position: absolute; inset: 0;
+    width: 100%; height: 100%;
+    pointer-events: none;
+    z-index: 2;
+  }
+
+  .vp-label {
+    position: absolute;
+    top: 14px; left: 16px;
+    z-index: 3;
+    pointer-events: none;
+  }
+  .vp-label .num {
+    font-family: var(--display);
+    font-weight: 800;
+    font-size: 14px;
+    color: var(--accent);
+    letter-spacing: 0.04em;
+  }
+  .vp-label .name {
+    font-family: var(--display);
+    font-weight: 600;
+    font-size: 22px;
+    letter-spacing: -0.01em;
+    color: var(--ink);
+    line-height: 1;
+    margin-top: 2px;
+  }
+  .vp-label .desc {
+    color: var(--ink-dim);
+    font-size: 10px;
+    letter-spacing: 0.16em;
+    text-transform: uppercase;
+    margin-top: 6px;
+  }
+
+  .vp-pan {
+    position: absolute;
+    bottom: 14px; left: 14px;
+    z-index: 4;
+    display: flex;
+    flex-direction: column;
+    gap: 4px;
+  }
+  .vp-pan button {
+    width: 28px; height: 24px;
+    background: var(--panel);
+    color: var(--ink-dim);
+    border: 1px solid var(--line);
+    border-radius: 2px;
+    cursor: pointer;
+    font-family: var(--mono);
+    font-size: 14px;
+    line-height: 1;
+    display: flex; align-items: center; justify-content: center;
+  }
+  .vp-pan button:hover { color: var(--ink); border-color: var(--ink-dim); }
+
+  .vp-floats {
+    position: absolute; inset: 0;
+    pointer-events: none;
+    z-index: 3;
+  }
+
+  /* Dimension labels (form view) */
+  .dim-label {
+    position: absolute;
+    background: rgba(10, 10, 14, 0.85);
+    border: 1px solid var(--line);
+    padding: 2px 6px;
+    font-family: var(--mono);
+    font-size: 10px;
+    color: var(--ink);
+    letter-spacing: 0.04em;
+    border-radius: 1px;
+    pointer-events: none;
+    transform: translate(-50%, -50%);
+    white-space: nowrap;
+  }
+  .dim-label .axis {
+    color: var(--accent);
+    margin-right: 4px;
+    font-weight: 600;
+  }
+
+  /* Floating composition labels */
+  .float-label {
+    position: absolute;
+    pointer-events: none;
+    background: rgba(10, 10, 14, 0.85);
+    border: 1px solid var(--line);
+    padding: 6px 10px;
+    border-radius: 2px;
+    font-family: var(--mono);
+    font-size: 11px;
+    width: 200px;
+    transform: translateY(-50%);
+  }
+  .float-label .head {
+    display: flex;
+    align-items: center;
+    gap: 6px;
+    margin-bottom: 2px;
+  }
+  .float-label .dot {
+    width: 9px; height: 9px;
+    border-radius: 1px;
+    border: 1px solid rgba(255,255,255,0.15);
+    flex-shrink: 0;
+  }
+  .float-label .name {
+    color: var(--ink);
+    font-weight: 500;
+    flex: 1;
+    white-space: nowrap;
+    overflow: hidden;
+    text-overflow: ellipsis;
+  }
+  .float-label .pct {
+    color: var(--ink-dim);
+    font-size: 10px;
+    flex-shrink: 0;
+  }
+  .float-label .vol {
+    color: var(--ink);
+    font-variant-numeric: tabular-nums;
+    font-size: 11px;
+  }
+  .float-label .vol .unit {
+    color: var(--ink-dim);
+    margin-left: 3px;
+    font-size: 10px;
+  }
+  .float-label .dims-line {
+    color: var(--ink-dim);
+    font-size: 10px;
+    margin-bottom: 2px;
+    letter-spacing: 0.04em;
+    font-variant-numeric: tabular-nums;
+  }
+
+  /* ---------- Footer (minimal) ---------- */
+  footer {
+    background: var(--bg-soft);
+    border-top: 1px solid var(--line);
+    padding: 10px 22px;
+    display: grid;
+    grid-template-columns: auto 1fr auto;
+    align-items: center;
+    gap: 18px;
+    font-size: 11px;
+  }
+  footer .obj-name {
+    font-family: var(--display);
+    font-weight: 600;
+    font-size: 16px;
+    color: var(--ink);
+    letter-spacing: -0.01em;
+  }
+  footer .meta { color: var(--ink-dim); letter-spacing: 0.04em; }
+  footer .meta b { color: var(--ink); font-weight: 500; }
+  footer .help { color: var(--ink-faint); letter-spacing: 0.04em; }
+  footer .help b { color: var(--ink-dim); font-weight: 500; }
+
+  /* ---------- About modal ---------- */
+  .modal-backdrop {
+    position: fixed; inset: 0;
+    background: rgba(0, 0, 0, 0.72);
+    backdrop-filter: blur(4px);
+    -webkit-backdrop-filter: blur(4px);
+    z-index: 200;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    padding: 20px;
+    opacity: 0;
+    pointer-events: none;
+    transition: opacity 0.2s ease;
+  }
+  .modal-backdrop.open {
+    opacity: 1;
+    pointer-events: auto;
+  }
+  .modal {
+    background: var(--bg-soft);
+    border: 1px solid var(--line);
+    border-radius: 3px;
+    max-width: 560px;
+    width: 100%;
+    max-height: calc(100vh - 40px);
+    overflow-y: auto;
+    padding: 32px 36px 28px;
+    position: relative;
+    box-shadow: 0 20px 60px rgba(0, 0, 0, 0.5);
+    transform: translateY(8px);
+    transition: transform 0.25s ease;
+  }
+  .modal-backdrop.open .modal {
+    transform: translateY(0);
+  }
+  .modal h1 {
+    font-family: var(--display);
+    font-weight: 800;
+    font-size: 30px;
+    letter-spacing: -0.02em;
+    line-height: 1;
+    color: var(--ink);
+    margin-bottom: 4px;
+  }
+  .modal h1 .accent { color: var(--accent); }
+  .modal .subtitle {
+    color: var(--ink-dim);
+    font-size: 11px;
+    letter-spacing: 0.18em;
+    text-transform: uppercase;
+    margin-bottom: 22px;
+  }
+  .modal p {
+    color: var(--ink);
+    font-size: 13px;
+    line-height: 1.65;
+    margin-bottom: 14px;
+  }
+  .modal p .term { color: var(--accent); font-weight: 500; }
+  .modal .lead-in {
+    color: var(--ink-dim);
+    font-size: 11px;
+    letter-spacing: 0.16em;
+    text-transform: uppercase;
+    margin-top: 18px;
+    margin-bottom: 8px;
+  }
+  .modal ul {
+    list-style: none;
+    padding: 0;
+    margin: 0 0 16px;
+  }
+  .modal li {
+    color: var(--ink);
+    font-size: 12px;
+    line-height: 1.6;
+    padding-left: 16px;
+    position: relative;
+    margin-bottom: 6px;
+  }
+  .modal li::before {
+    content: '';
+    position: absolute;
+    left: 0; top: 9px;
+    width: 8px; height: 1px;
+    background: var(--accent);
+  }
+  .modal .footnote {
+    color: var(--ink-faint);
+    font-size: 11px;
+    font-style: italic;
+    margin-top: 18px;
+    padding-top: 14px;
+    border-top: 1px solid var(--line);
+  }
+  .modal .modal-close {
+    display: block;
+    width: 100%;
+    margin-top: 22px;
+    padding: 11px;
+    background: var(--accent);
+    color: var(--bg);
+    border: 0;
+    border-radius: 2px;
+    font-family: var(--display);
+    font-weight: 600;
+    font-size: 13px;
+    letter-spacing: 0.06em;
+    text-transform: uppercase;
+    cursor: pointer;
+    transition: background 0.15s;
+  }
+  .modal .modal-close:hover { background: #e5c66a; }
+
+  /* About (?) button in toolbar */
+  .btn.icon-btn {
+    width: 32px;
+    padding: 7px 0;
+    justify-content: center;
+    font-family: var(--display);
+    font-weight: 700;
+    font-size: 14px;
+  }
+
+  @media (max-width: 820px) {
+    .viewport { width: 100%; height: 50%; }
+    #vp-form { top: 0; bottom: 50%; border-right: 0; border-bottom: 1px solid var(--line); }
+    #vp-comp { top: 50%; bottom: 0; }
+    header { grid-template-columns: 1fr; }
+    footer { grid-template-columns: 1fr; gap: 6px; }
+  }
+</style>
+</head>
+<body>
+
+<header>
+  <div class="brand">
+    <div class="mark">Materia</div>
+    <div class="tag">Object Composition Viewer</div>
+  </div>
+
+  <div class="toolbar">
+    <div class="field">
+      <label for="object-select">Object</label>
+      <select id="object-select"></select>
+    </div>
+    <div class="field">
+      <label>View</label>
+      <button id="lock-btn" class="btn" aria-pressed="true">
+        <span class="dot"></span><span id="lock-label">Locked</span>
+      </button>
+    </div>
+    <div class="field">
+      <label>Units</label>
+      <div class="seg" id="units-seg">
+        <button data-units="metric" class="active">m³</button>
+        <button data-units="imperial">ft³</button>
+      </div>
+    </div>
+    <div class="field">
+      <label>Measurements</label>
+      <button id="measure-btn" class="btn" aria-pressed="true">
+        <span class="dot"></span><span id="measure-label">On</span>
+      </button>
+    </div>
+    <div class="field">
+      <label>&nbsp;</label>
+      <button id="reset-btn" class="btn">Reset View</button>
+    </div>
+    <div class="field">
+      <label>&nbsp;</label>
+      <button id="about-btn" class="btn icon-btn" title="About Materia" aria-label="About Materia">?</button>
+    </div>
+  </div>
+</header>
+
+<main id="stage">
+  <canvas id="render-canvas"></canvas>
+
+  <section class="viewport" id="vp-form">
+    <div class="vp-overlay" id="overlay-form"></div>
+    <svg class="vp-svg" id="form-svg"></svg>
+    <div class="vp-floats" id="form-floats"></div>
+    <div class="vp-floats" id="form-volume-floats"></div>
+    <div class="vp-label">
+      <div class="num">01</div>
+      <div class="name">Form</div>
+      <div class="desc">Object as it exists</div>
+    </div>
+    <div class="vp-pan" data-target="form">
+      <button data-pan="up" title="Pan up">↑</button>
+      <button data-pan="down" title="Pan down">↓</button>
+    </div>
+  </section>
+
+  <section class="viewport" id="vp-comp">
+    <div class="vp-overlay" id="overlay-comp"></div>
+    <svg class="vp-svg" id="comp-svg"></svg>
+    <div class="vp-floats" id="comp-floats"></div>
+    <div class="vp-floats" id="comp-dim-floats"></div>
+    <div class="vp-label">
+      <div class="num">02</div>
+      <div class="name">Composition</div>
+      <div class="desc">Materials, by volume, stacked</div>
+    </div>
+    <div class="vp-pan" data-target="comp">
+      <button data-pan="up" title="Pan up">↑</button>
+      <button data-pan="down" title="Pan down">↓</button>
+    </div>
+  </section>
+</main>
+
+<footer>
+  <div class="obj-name" id="obj-name">—</div>
+  <div class="meta" id="obj-loc">—</div>
+  <div class="help"><b>drag</b> rotate · <b>scroll</b> zoom · <b>right-drag</b> or <b>↑↓</b> pan</div>
+</footer>
+
+<div class="modal-backdrop" id="about-modal" role="dialog" aria-modal="true" aria-labelledby="about-title">
+  <div class="modal">
+    <h1 id="about-title">Materia<span class="accent">.</span></h1>
+    <div class="subtitle">Object Composition Viewer</div>
+
+    <p>Materia shows everyday and iconic objects alongside what they are actually made of.</p>
+
+    <p>The left panel, <span class="term">Form</span>, is the object as it exists. The right panel, <span class="term">Composition</span>, breaks that same object into its constituent materials and renders each as a cube sized by volume. Both views share the same scale in meters, so you can compare the object directly to the size of the stuff inside it.</p>
+
+    <div class="lead-in">Controls</div>
+    <ul>
+      <li><b>Choose object</b> — Use the dropdown at the top-left of the toolbar to switch between the available objects.</li>
+      <li><b>Rotate</b> — Left-click and drag inside either view (or one-finger drag on a trackpad). Both views rotate together unless unlocked.</li>
+      <li><b>Zoom</b> — Scroll the mouse wheel, or pinch / two-finger scroll on a trackpad.</li>
+      <li><b>Pan</b> — Right-click and drag for free pan in any direction, or use the ↑ / ↓ buttons in the lower-left of each view to pan vertically.</li>
+      <li><b>Lock</b> — The lock toggle in the toolbar keeps both views synchronized. Turn it off to inspect each view independently.</li>
+      <li><b>Units</b> — Switch volume readouts between m³ and ft³ in the toolbar.</li>
+      <li><b>Measurements</b> — Toggle the X / Y / Z dimension lines on both views with the Measurements button. They're on by default.</li>
+      <li><b>Reset View</b> — Re-frames both panels on the current object.</li>
+    </ul>
+
+    <div class="footnote">Volume figures are illustrative — directionally correct, but approximate.</div>
+
+    <button class="modal-close" id="modal-close-btn">Got it — let me explore</button>
+  </div>
+</div>
+
+<script type="importmap">
+{
+  "imports": {
+    "three": "https://cdn.jsdelivr.net/npm/three@0.160.0/build/three.module.js",
+    "three/addons/": "https://cdn.jsdelivr.net/npm/three@0.160.0/examples/jsm/"
+  }
+}
+</script>
+
+<script type="module">
+import * as THREE from 'three';
+import { OrbitControls } from 'three/addons/controls/OrbitControls.js';
+
+/* ===========================================================
+   MATERIALS — colors and densities
+   The same color appears in form and composition views.
+   =========================================================== */
+const MATERIALS = {
+  steel:      { name: 'Steel',            color: '#7d8794', density: 7850 },
+  iron:       { name: 'Wrought Iron',     color: '#5e5852', density: 7700 },
+  concrete:   { name: 'Concrete',         color: '#b5afa3', density: 2400 },
+  copper:     { name: 'Copper',           color: '#cf8348', density: 8960 },
+  aluminum:   { name: 'Aluminum',         color: '#d2d6dc', density: 2700 },
+  glass:      { name: 'Glass',            color: '#8ec8d6', density: 2500 },
+  plastic:    { name: 'Plastic',          color: '#dcd4c4', density: 1100 },
+  rubber:     { name: 'Rubber',           color: '#2a2a2a', density: 1200 },
+  limestone:  { name: 'Limestone',        color: '#dccfae', density: 2600 },
+  granite:    { name: 'Granite',          color: '#8e857c', density: 2700 },
+  brick:      { name: 'Brick',            color: '#a04438', density: 1900 },
+  marble:     { name: 'Marble',           color: '#e8e3d8', density: 2700 },
+  sandstone:  { name: 'Sandstone',        color: '#c89968', density: 2300 },
+  paint:      { name: 'Paint',            color: '#ddd9d0', density: 1300 },
+  insulation: { name: 'Insulation',       color: '#f3eccd', density: 35 },
+  fuel:       { name: 'Fuel / Fluids',    color: '#7563a0', density: 850 },
+  wood:       { name: 'Wood',             color: '#a9744a', density: 700 },
+  bark:       { name: 'Bark',             color: '#5e3a25', density: 600 },
+  cardboard:  { name: 'Cardboard',        color: '#b89169', density: 250 },
+  lead:       { name: 'Lead',             color: '#5b6678', density: 11340 },
+  titanium:   { name: 'Titanium',         color: '#9aa1ad', density: 4500 },
+  composite:  { name: 'Composites',       color: '#3a3a40', density: 1600 },
+  nylon:      { name: 'Synthetic Fabric', color: '#a8a39c', density: 1140 },
+  propellant: { name: 'Rocket Propellant', color: '#e88847', density: 1100 },
+  hot_air:    { name: 'Heated Air',       color: '#f4a85e', density: 1.0 },
+  water:      { name: 'Water',            color: '#5fb1d9', density: 1000 },
+  fat:        { name: 'Fat (Adipose)',    color: '#f4d878', density: 920 },
+  protein:    { name: 'Protein (Tissue)', color: '#d97a82', density: 1350 },
+  bone:       { name: 'Bone',             color: '#ece5c9', density: 1500 },
+};
+
+function makeMat(key, opts = {}) {
+  const m = MATERIALS[key];
+  const color = m ? m.color : '#888';
+  const density = m ? m.density : 1000;
+  return new THREE.MeshStandardMaterial({
+    color,
+    roughness: opts.roughness ?? 0.6,
+    metalness: opts.metalness ?? (density > 5000 ? 0.5 : 0.1),
+    ...opts,
+  });
+}
+
+/* ===========================================================
+   GEOMETRY HELPERS
+   =========================================================== */
+function strut(p0, p1, radius, material) {
+  const dir = new THREE.Vector3().subVectors(p1, p0);
+  const len = dir.length();
+  if (len < 1e-6) return null;
+  const geo = new THREE.CylinderGeometry(radius, radius, len, 6);
+  const mesh = new THREE.Mesh(geo, material);
+  mesh.position.copy(p0).add(p1).multiplyScalar(0.5);
+  mesh.quaternion.setFromUnitVectors(new THREE.Vector3(0,1,0), dir.clone().normalize());
+  return mesh;
+}
+function box(w, h, d, material) {
+  return new THREE.Mesh(new THREE.BoxGeometry(w, h, d), material);
+}
+function cyl(rTop, rBot, h, material, segs=16) {
+  return new THREE.Mesh(new THREE.CylinderGeometry(rTop, rBot, h, segs), material);
+}
+function sph(r, material, segs=16) {
+  return new THREE.Mesh(new THREE.SphereGeometry(r, segs, Math.max(8, segs/2)), material);
+}
+function edges(mesh, color=0x000000, opacity=0.22) {
+  const eg = new THREE.EdgesGeometry(mesh.geometry, 20);
+  const lm = new THREE.LineBasicMaterial({ color, transparent: true, opacity });
+  const l = new THREE.LineSegments(eg, lm);
+  l.position.copy(mesh.position);
+  l.rotation.copy(mesh.rotation);
+  l.scale.copy(mesh.scale);
+  return l;
+}
+
+/* ===========================================================
+   OBJECT BUILDERS
+   Each returns a THREE.Group at real-world scale (meters).
+   Colors come from MATERIALS via makeMat().
+   =========================================================== */
+
+function buildEiffelTower() {
+  const g = new THREE.Group();
+  const ironM = makeMat('iron', { metalness: 0.3, roughness: 0.55 });
+  const profile = [
+    { y: 0,    r: 62 }, { y: 57,   r: 35 }, { y: 115,  r: 20 },
+    { y: 200,  r: 10 }, { y: 276,  r: 8 },  { y: 300,  r: 4 }, { y: 330,  r: 1 },
+  ];
+  const corners = [];
+  for (let c = 0; c < 4; c++) {
+    const ang = (c/4)*Math.PI*2 + Math.PI/4;
+    const col = profile.map(p => new THREE.Vector3(Math.cos(ang)*p.r, p.y, Math.sin(ang)*p.r));
+    corners.push(col);
+    for (let i = 0; i < col.length-1; i++) {
+      const r = Math.max(0.4, 1.6*(1 - i*0.12));
+      const s = strut(col[i], col[i+1], r, ironM); if (s) g.add(s);
+    }
+  }
+  for (const pi of [0,1,2,4]) {
+    for (let c = 0; c < 4; c++) {
+      const a = corners[c][pi], b = corners[(c+1)%4][pi];
+      const s = strut(a,b,1.2,ironM); if (s) g.add(s);
+    }
+  }
+  for (let c = 0; c < 4; c++) {
+    const c2 = (c+1)%4;
+    for (let i = 0; i < profile.length-1; i++) {
+      const a0=corners[c][i], a1=corners[c][i+1];
+      const b0=corners[c2][i], b1=corners[c2][i+1];
+      const s1=strut(a0,b1,0.5,ironM); if (s1) g.add(s1);
+      const s2=strut(b0,a1,0.5,ironM); if (s2) g.add(s2);
+      const ma=new THREE.Vector3().lerpVectors(a0,a1,0.5);
+      const mb=new THREE.Vector3().lerpVectors(b0,b1,0.5);
+      const s3=strut(ma,mb,0.4,ironM); if (s3) g.add(s3);
+    }
+  }
+  return g;
+}
+
+function buildEmpireStateBuilding() {
+  const g = new THREE.Group();
+  const stoneM = makeMat('limestone', { roughness: 0.85 });
+  const trimM  = makeMat('granite',   { roughness: 0.7 });
+  const spireM = makeMat('aluminum',  { roughness: 0.4, metalness: 0.6 });
+  const tiers = [
+    { w: 130, d: 90, h: 60,  y: 0 },
+    { w: 110, d: 75, h: 90,  y: 60 },
+    { w: 90,  d: 62, h: 80,  y: 150 },
+    { w: 72,  d: 50, h: 90,  y: 230 },
+    { w: 56,  d: 40, h: 60,  y: 320 },
+    { w: 38,  d: 30, h: 25,  y: 380 },
+  ];
+  for (const t of tiers) {
+    const m = box(t.w, t.h, t.d, stoneM);
+    m.position.y = t.y + t.h/2;
+    g.add(m); g.add(edges(m, 0x000000, 0.18));
+    const trim = box(t.w*1.005, 1.5, t.d*1.005, trimM);
+    trim.position.y = t.y + t.h - 1; g.add(trim);
+  }
+  const sBase = cyl(7, 12, 20, spireM, 12); sBase.position.y = 415; g.add(sBase);
+  const mast = cyl(0.5, 7, 18, spireM, 12); mast.position.y = 434; g.add(mast);
+  return g;
+}
+
+function buildStatueOfLiberty() {
+  const g = new THREE.Group();
+  const copperM = makeMat('copper', { color: '#7fb098', metalness: 0.35, roughness: 0.7 });  // weathered patina green
+  const graniteM = makeMat('granite', { roughness: 0.85 });
+  const concreteM = makeMat('concrete', { roughness: 0.95 });
+  const flameM = new THREE.MeshStandardMaterial({ color: 0xf0c878, roughness: 0.45, emissive: 0x553300, emissiveIntensity: 0.3 });
+
+  // ---- Fort Wood base (star-shaped foundation, simplified as octagon) ----
+  const fortGeo = new THREE.CylinderGeometry(32, 35, 12, 11);  // 11-sided approximates the star
+  const fort = new THREE.Mesh(fortGeo, concreteM);
+  fort.position.y = 6;
+  g.add(fort);
+  g.add(edges(fort, 0x000000, 0.15));
+
+  // ---- Pedestal (47 m tall, tapered granite block) ----
+  // Real pedestal: ~27 m square base, 13 m square top, 47 m tall
+  const pedBaseY = 12;
+  const pedHeight = 47;
+  // Two-tier pedestal: thicker bottom plinth, then tapered upper section
+  const plinth = box(27, 8, 27, graniteM);
+  plinth.position.y = pedBaseY + 4;
+  g.add(plinth);
+  g.add(edges(plinth, 0x000000, 0.2));
+
+  // Tapered upper pedestal — true frustum from 23×23 base to 15×15 top
+  function squareFrustum(wBot, wTop, height, mat) {
+    const v = [
+      -wBot/2, 0, -wBot/2,  wBot/2, 0, -wBot/2,  wBot/2, 0, wBot/2,  -wBot/2, 0, wBot/2,
+      -wTop/2, height, -wTop/2,  wTop/2, height, -wTop/2,  wTop/2, height, wTop/2,  -wTop/2, height, wTop/2,
+    ];
+    const idx = [
+      0,1,5, 0,5,4,  1,2,6, 1,6,5,  2,3,7, 2,7,6,  3,0,4, 3,4,7,  4,5,6, 4,6,7,
+    ];
+    const geo = new THREE.BufferGeometry();
+    geo.setAttribute('position', new THREE.Float32BufferAttribute(v, 3));
+    geo.setIndex(idx);
+    geo.computeVertexNormals();
+    return new THREE.Mesh(geo, mat);
+  }
+  const pedUpper = squareFrustum(23, 15, pedHeight - 8, graniteM);
+  pedUpper.position.y = pedBaseY + 8;
+  g.add(pedUpper);
+  g.add(edges(pedUpper, 0x000000, 0.2));
+
+  // ---- Statue (46 m from feet to torch tip) ----
+  const statueY = pedBaseY + pedHeight;  // top of pedestal = 59m
+
+  // Lower robe: wide, flared at the base (Liberty's robe drapes around her)
+  const robeLower = cyl(6.5, 4.5, 16, copperM, 18);
+  robeLower.position.y = statueY + 8;
+  g.add(robeLower);
+
+  // Mid robe: tapers upward, narrower
+  const robeMid = cyl(4.5, 3.6, 12, copperM, 16);
+  robeMid.position.y = statueY + 22;
+  g.add(robeMid);
+
+  // Upper robe / torso area
+  const torso = cyl(3.6, 3.2, 6, copperM, 14);
+  torso.position.y = statueY + 31;
+  g.add(torso);
+
+  // Shoulders — slightly wider than torso, suggesting the robe folds
+  const shoulders = sph(3.8, copperM, 16);
+  shoulders.scale.set(1.3, 0.55, 1.0);
+  shoulders.position.y = statueY + 35.5;
+  g.add(shoulders);
+
+  // Neck — short narrow cylinder
+  const neck = cyl(1.0, 1.0, 1.6, copperM, 12);
+  neck.position.y = statueY + 37.5;
+  g.add(neck);
+
+  // Head — stretched slightly vertically for the face shape
+  const head = sph(2.0, copperM, 18);
+  head.scale.set(1.0, 1.15, 1.0);
+  head.position.y = statueY + 39.5;
+  g.add(head);
+
+  // ---- Crown with 7 spikes ----
+  // Crown band — a low ring around the top of the head
+  const crownBand = cyl(2.05, 2.05, 0.6, copperM, 16);
+  crownBand.position.y = statueY + 41;
+  g.add(crownBand);
+  // 7 spikes radiating outward and upward (facing forward over a 180° arc)
+  for (let i = 0; i < 7; i++) {
+    const a = -Math.PI/2 + (i / 6) * Math.PI;  // -90° to +90° around the front
+    const spike = new THREE.Mesh(new THREE.ConeGeometry(0.30, 2.5, 6), copperM);
+    // Position spikes tilted outward radially from head center
+    const tiltOut = 0.35;  // radians of outward tilt
+    const r = 2.05;
+    spike.position.set(Math.cos(a) * r, statueY + 42.5, Math.sin(a) * r);
+    spike.rotation.set(Math.sin(a) * tiltOut, 0, -Math.cos(a) * tiltOut);
+    g.add(spike);
+  }
+
+  // ---- Raised right arm + torch ----
+  // Real arm reaches from shoulder up at an angle. Arm origin at right
+  // shoulder (+X side); the hand+torch ends about 11 m above the shoulder.
+  const shoulderRight = new THREE.Vector3(2.8, statueY + 35.5, 0);
+  const armEnd = new THREE.Vector3(3.8, statueY + 46, 0);
+  const arm = strut(shoulderRight, armEnd, 0.85, copperM); if (arm) g.add(arm);
+
+  // Hand/cuff at top of arm
+  const cuff = sph(1.1, copperM, 12);
+  cuff.position.copy(armEnd);
+  g.add(cuff);
+
+  // Torch handle (vertical, just above the hand)
+  const torchHandle = cyl(0.4, 0.5, 2.0, copperM, 10);
+  torchHandle.position.set(armEnd.x, armEnd.y + 1.5, armEnd.z);
+  g.add(torchHandle);
+
+  // Torch bowl (cup that holds the flame)
+  const torchBowl = cyl(1.0, 0.5, 1.2, copperM, 12);
+  torchBowl.position.set(armEnd.x, armEnd.y + 3.1, armEnd.z);
+  g.add(torchBowl);
+
+  // Flame
+  const flame = new THREE.Mesh(new THREE.ConeGeometry(0.9, 3.5, 12), flameM);
+  flame.position.set(armEnd.x, armEnd.y + 5.4, armEnd.z);
+  g.add(flame);
+
+  // ---- Left arm holding the tablet ----
+  // Tablet held at chest level, cradled by left arm. Tablet face tilted slightly forward.
+  const tablet = box(3.2, 4.0, 0.7, copperM);
+  tablet.position.set(-3.2, statueY + 30, 1.3);
+  tablet.rotation.z = -0.25;  // tilted (top tilted toward statue)
+  tablet.rotation.y = 0.15;   // turned slightly outward
+  g.add(tablet);
+
+  // Left forearm cradling tablet
+  const armLeftStart = new THREE.Vector3(-2.5, statueY + 33, 0);
+  const armLeftEnd = new THREE.Vector3(-3.2, statueY + 30, 1.3);
+  const armLeft = strut(armLeftStart, armLeftEnd, 0.8, copperM); if (armLeft) g.add(armLeft);
+
+  return g;
+}
+
+function buildSedan() {
+  const g = new THREE.Group();
+  const bodyM = makeMat('steel', { metalness: 0.5, roughness: 0.35 });
+  const glassM = makeMat('glass', { roughness: 0.1, metalness: 0.2, transparent: true, opacity: 0.7 });
+  const tireM = makeMat('rubber', { roughness: 0.85 });
+  const rimM  = makeMat('aluminum', { roughness: 0.4, metalness: 0.7 });
+  const trimM = makeMat('plastic', { roughness: 0.7 });
+
+  const chassis = box(4.6, 0.55, 1.78, bodyM); chassis.position.y = 0.575; g.add(chassis);
+  const cabin = box(2.6, 0.65, 1.62, bodyM); cabin.position.y = 1.175; g.add(cabin);
+  const hood = box(1.2, 0.15, 1.7, bodyM); hood.position.set(1.55, 0.92, 0); g.add(hood);
+  const trunk = box(0.95, 0.18, 1.7, bodyM); trunk.position.set(-1.7, 0.94, 0); g.add(trunk);
+
+  const fG = box(0.55, 0.55, 1.5, glassM); fG.rotation.z = -0.4; fG.position.set(0.95, 1.30, 0); g.add(fG);
+  const rG = box(0.55, 0.55, 1.5, glassM); rG.rotation.z = 0.4; rG.position.set(-1.05, 1.30, 0); g.add(rG);
+  for (const s of [1,-1]) {
+    const sG = box(2.2, 0.45, 0.04, glassM); sG.position.set(0, 1.30, s*0.81); g.add(sG);
+  }
+
+  const wheelGeo = new THREE.CylinderGeometry(0.34, 0.34, 0.22, 24);
+  const rimGeo = new THREE.CylinderGeometry(0.20, 0.20, 0.225, 18);
+  for (const [x,z] of [[1.45,0.85],[1.45,-0.85],[-1.45,0.85],[-1.45,-0.85]]) {
+    const w = new THREE.Mesh(wheelGeo, tireM); w.rotation.x = Math.PI/2; w.position.set(x,0.34,z); g.add(w);
+    const r = new THREE.Mesh(rimGeo, rimM); r.rotation.x = Math.PI/2; r.position.set(x,0.34,z); g.add(r);
+  }
+  const grille = box(0.05, 0.20, 1.1, trimM); grille.position.set(2.30, 0.55, 0); g.add(grille);
+  for (const s of [1,-1]) {
+    const hl = sph(0.10, makeMat('glass',{ emissive:0x444433, emissiveIntensity:0.3 }), 12);
+    hl.position.set(2.30, 0.62, s*0.55); hl.scale.set(0.5, 0.7, 1); g.add(hl);
+  }
+  return g;
+}
+
+function buildLocomotive() {
+  const g = new THREE.Group();
+  const bodyM = makeMat('steel', { roughness: 0.65, metalness: 0.4 });
+  const trimM = makeMat('rubber', { roughness: 0.8 });
+  const glassM = makeMat('glass', { transparent: true, opacity: 0.6 });
+
+  const longHood = box(13, 2.6, 2.8, bodyM); longHood.position.set(-2, 2.5, 0); g.add(longHood);
+  const cab = box(3, 3.0, 2.8, bodyM); cab.position.set(6, 2.7, 0); g.add(cab);
+  const shortHood = box(2.5, 2.2, 2.8, bodyM); shortHood.position.set(8.7, 2.3, 0); g.add(shortHood);
+  const frame = box(20, 0.5, 3.0, trimM); frame.position.y = 0.95; g.add(frame);
+
+  for (const s of [1,-1]) {
+    const win = box(2.6, 1.1, 0.05, glassM); win.position.set(6, 3.4, s*1.41); g.add(win);
+  }
+  const fW = box(0.05, 1.1, 2.0, glassM); fW.position.set(4.49, 3.4, 0); g.add(fW);
+  const stack = cyl(0.3, 0.4, 0.6, trimM, 10); stack.position.set(-1, 4.1, 0); g.add(stack);
+  const fan = cyl(0.7, 0.7, 0.15, trimM, 16); fan.rotation.x = Math.PI/2; fan.position.set(-7.5, 3.88, 0); g.add(fan);
+
+  const truckGeo = new THREE.BoxGeometry(5, 0.5, 2.6);
+  for (const tx of [-6, 6]) {
+    const truck = new THREE.Mesh(truckGeo, trimM); truck.position.set(tx, 0.65, 0); g.add(truck);
+    for (let i = -1; i <= 1; i++) for (const s of [1,-1]) {
+      const w = cyl(0.55, 0.55, 0.25, trimM, 18); w.rotation.x = Math.PI/2;
+      w.position.set(tx + i*1.7, 0.55, s*1.35); g.add(w);
+    }
+  }
+  for (const cx of [-10.2, 10.2]) {
+    const c = box(0.4, 0.4, 0.5, trimM); c.position.set(cx, 0.95, 0); g.add(c);
+  }
+  return g;
+}
+
+function buildFridge() {
+  const g = new THREE.Group();
+  const bodyM = makeMat('steel', { metalness: 0.4, roughness: 0.35 });
+  const seamM = makeMat('plastic', { roughness: 0.8 });
+  const handleM = makeMat('aluminum', { metalness: 0.7, roughness: 0.3 });
+
+  const body = box(0.7, 1.8, 0.7, bodyM); body.position.y = 0.9; g.add(body); g.add(edges(body,0x000000,0.18));
+  const seam = box(0.71, 0.015, 0.72, seamM); seam.position.y = 1.25; g.add(seam);
+  const ds = box(0.005, 1.78, 0.005, seamM); ds.position.set(-0.005, 0.9, 0.355); g.add(ds);
+  for (const yh of [1.45, 0.55]) {
+    const h = cyl(0.012, 0.012, 0.28, handleM, 10); h.position.set(-0.30, yh, 0.36); h.rotation.x = Math.PI/2; g.add(h);
+  }
+  return g;
+}
+
+/* ---- New objects ---- */
+
+function buildBoeing747() {
+  const g = new THREE.Group();
+  const bodyM = makeMat('aluminum', { metalness: 0.5, roughness: 0.35 });
+  const wingM = makeMat('aluminum', { metalness: 0.5, roughness: 0.35 });
+  const engineM = makeMat('titanium', { metalness: 0.7, roughness: 0.3 });
+  const intakeM = makeMat('rubber');
+  const glassM = makeMat('glass', { transparent: true, opacity: 0.6 });
+  const tireM = makeMat('rubber');
+  const steelM = makeMat('steel');
+
+  // 747-400: 70.7 m length, 64.4 m wingspan, 19.4 m tall, 6.5 m fuselage diameter
+  const fuseY = 5.5;   // fuselage centerline height (raised so engines fit below wings)
+  const R = 3.25;      // fuselage radius
+
+  // ---- Fuselage: cylindrical main body ----
+  const fuse = cyl(R, R, 50, bodyM, 32);
+  fuse.rotation.z = Math.PI/2;
+  fuse.position.set(-2, fuseY, 0);
+  g.add(fuse);
+  // Cylinder spans x = -27 to x = 23
+
+  // ---- Nose: stretched sphere centered on fuselage front ----
+  // Sphere of full fuselage radius means the cross-section matches the cylinder
+  // exactly where they meet. Stretched 2x in X gives a 6.5m forward extent.
+  const nose = sph(R, bodyM, 32);
+  nose.scale.set(2.0, 1.0, 1.0);
+  nose.position.set(23, fuseY, 0);
+  g.add(nose);
+  // Visible nose extends from x=23 (joining fuselage) to x=29.5 (tip)
+
+  // ---- Tail: tapered tube ending in a small disc, slightly upturned ----
+  const tail = cyl(0.5, R, 14, bodyM, 24);
+  tail.rotation.z = Math.PI/2 - 0.06;
+  tail.position.set(-34, fuseY + 0.4, 0);
+  g.add(tail);
+
+  // ---- Hump (upper deck) ----
+  const hump = sph(1, bodyM, 32);
+  hump.scale.set(11, 3.5, 2.7);
+  hump.position.set(13, fuseY + 1, 0);
+  g.add(hump);
+
+  // ---- Wings: tapered, swept ----
+  // Define planform as a quadrilateral in XY (X=chord, Y=span). After
+  // ExtrudeGeometry + rotation.x, the planform lies horizontally in XZ with
+  // thickness in Y. Root extends inward to z=0 so the wing emerges from the
+  // bottom of the fuselage cleanly.
+  function makeWing(side) {
+    let corners = [
+      [7, 0],            // root LE — extends into fuselage at z=0
+      [-17, 32],         // tip LE
+      [-19, 32],         // tip TE
+      [-9, 0],           // root TE
+    ];
+    if (side === -1) {
+      corners = corners.map(c => [c[0], -c[1]]).reverse();
+    }
+    const shape = new THREE.Shape();
+    shape.moveTo(corners[0][0], corners[0][1]);
+    for (let i = 1; i < corners.length; i++) shape.lineTo(corners[i][0], corners[i][1]);
+    shape.closePath();
+
+    const thickness = 0.8;
+    const geo = new THREE.ExtrudeGeometry(shape, { depth: thickness, bevelEnabled: false });
+    geo.translate(0, 0, -thickness / 2);
+    const mesh = new THREE.Mesh(geo, wingM);
+    mesh.rotation.x = Math.PI / 2;
+    mesh.position.y = fuseY - 1.5;
+    return mesh;
+  }
+  g.add(makeWing(1));
+  g.add(makeWing(-1));
+
+  // ---- Engines (4 high-bypass turbofans on pylons) ----
+  function engineAt(x, y, z) {
+    // Tapered nacelle: front (rBot, +X side) wider than rear (rTop, -X side)
+    const eng = cyl(1.45, 1.55, 6, engineM, 24);
+    eng.rotation.z = Math.PI / 2;
+    eng.position.set(x, y, z);
+    g.add(eng);
+
+    const intake = cyl(1.6, 1.6, 0.4, intakeM, 24);
+    intake.rotation.z = Math.PI / 2;
+    intake.position.set(x + 3.2, y, z);
+    g.add(intake);
+
+    const fan = cyl(1.45, 1.45, 0.05,
+      makeMat('steel', { metalness: 0.9, roughness: 0.2 }), 20);
+    fan.rotation.z = Math.PI / 2;
+    fan.position.set(x + 3.35, y, z);
+    g.add(fan);
+
+    const pylon = box(2, 0.6, 0.4, wingM);
+    pylon.position.set(x, y + 1.85, z);
+    g.add(pylon);
+  }
+  // Inboard engines at z = ±11, outboard at z = ±22
+  engineAt(-2, 1.8, 11);
+  engineAt(-2, 1.8, -11);
+  engineAt(-10, 1.8, 22);
+  engineAt(-10, 1.8, -22);
+
+  // ---- Vertical stabilizer: tapered, swept (~50°) ----
+  // Shape is in XY: X = chord, Y = height. No rotation needed — the fin is
+  // naturally vertical with thickness in Z.
+  const vsCorners = [
+    [4, 0],      // base LE
+    [-9, 11],    // tip LE
+    [-11, 11],   // tip TE
+    [-7, 0],     // base TE
+  ];
+  const vsShape = new THREE.Shape();
+  vsShape.moveTo(vsCorners[0][0], vsCorners[0][1]);
+  for (let i = 1; i < vsCorners.length; i++) vsShape.lineTo(vsCorners[i][0], vsCorners[i][1]);
+  vsShape.closePath();
+  const vsThickness = 0.7;
+  const vsGeo = new THREE.ExtrudeGeometry(vsShape, { depth: vsThickness, bevelEnabled: false });
+  vsGeo.translate(0, 0, -vsThickness / 2);
+  const vs = new THREE.Mesh(vsGeo, wingM);
+  vs.position.set(-30, fuseY + R - 0.5, 0);
+  g.add(vs);
+
+  // ---- Horizontal stabilizers: tapered, swept ----
+  function makeHStab(side) {
+    let corners = [
+      [3, 1],
+      [-5, 11],
+      [-7, 11],
+      [-3, 1],
+    ];
+    if (side === -1) {
+      corners = corners.map(c => [c[0], -c[1]]).reverse();
+    }
+    const shape = new THREE.Shape();
+    shape.moveTo(corners[0][0], corners[0][1]);
+    for (let i = 1; i < corners.length; i++) shape.lineTo(corners[i][0], corners[i][1]);
+    shape.closePath();
+    const thickness = 0.4;
+    const geo = new THREE.ExtrudeGeometry(shape, { depth: thickness, bevelEnabled: false });
+    geo.translate(0, 0, -thickness / 2);
+    const mesh = new THREE.Mesh(geo, wingM);
+    mesh.rotation.x = Math.PI / 2;
+    mesh.position.set(-32, fuseY + 1.5, 0);
+    return mesh;
+  }
+  g.add(makeHStab(1));
+  g.add(makeHStab(-1));
+
+  // ---- Cockpit windshield ----
+  for (const s of [1, -1]) {
+    const cw = box(0.05, 0.9, 1.3, glassM);
+    cw.position.set(24, fuseY + 1.5, s * 0.85);
+    cw.rotation.y = s * Math.PI / 4.5;
+    cw.rotation.z = -0.4;
+    g.add(cw);
+  }
+
+  // ---- Side windows ----
+  for (const s of [1, -1]) {
+    const udw = box(15, 0.3, 0.05, glassM);
+    udw.position.set(11, fuseY + 2.7, s * 2.6);
+    g.add(udw);
+  }
+  for (const s of [1, -1]) {
+    const mdw = box(45, 0.25, 0.05, glassM);
+    mdw.position.set(-2, fuseY + 0.5, s * R);
+    g.add(mdw);
+  }
+
+  // ---- Landing gear: 18 tires total ----
+  for (const tz of [-0.5, 0.5]) {
+    const t = cyl(0.55, 0.55, 0.4, tireM, 14);
+    t.rotation.x = Math.PI / 2;
+    t.position.set(20, 0.55, tz);
+    g.add(t);
+  }
+  const noseLeg = strut(
+    new THREE.Vector3(20, 0.8, 0),
+    new THREE.Vector3(20, fuseY - 2.5, 0),
+    0.18, steelM
+  );
+  if (noseLeg) g.add(noseLeg);
+
+  const mainGearConfigs = [
+    { x: -5, z: -3 }, { x: -5, z: 3 },
+    { x: -10, z: -6 }, { x: -10, z: 6 },
+  ];
+  for (const cfg of mainGearConfigs) {
+    for (const tx of [-0.7, 0.7]) {
+      for (const tz of [-0.55, 0.55]) {
+        const t = cyl(0.65, 0.65, 0.45, tireM, 14);
+        t.rotation.x = Math.PI / 2;
+        t.position.set(cfg.x + tx, 0.65, cfg.z + tz);
+        g.add(t);
+      }
+    }
+    const leg = strut(
+      new THREE.Vector3(cfg.x, 1.0, cfg.z),
+      new THREE.Vector3(cfg.x, fuseY - 2.5, cfg.z),
+      0.22, steelM
+    );
+    if (leg) g.add(leg);
+  }
+
+  return g;
+}
+
+
+function buildCargoFreighter() {
+  const g = new THREE.Group();
+  const hullM = makeMat('steel', { metalness: 0.3, roughness: 0.6 });
+  const supM  = makeMat('paint', { roughness: 0.7 });
+
+  const hull = box(290, 18, 32, hullM); hull.position.y = 9; g.add(hull); g.add(edges(hull,0x000000,0.15));
+  const bow = box(10, 18, 14, hullM); bow.position.set(140, 9, 0); bow.rotation.y = Math.PI/4; g.add(bow);
+  const deck = box(290, 0.5, 32, supM); deck.position.y = 18.25; g.add(deck);
+  const bridge = box(20, 20, 28, supM); bridge.position.set(-120, 28, 0); g.add(bridge);
+  const wheelhouse = box(15, 5, 25, makeMat('glass', { transparent: true, opacity: 0.7 }));
+  wheelhouse.position.set(-120, 41, 0); g.add(wheelhouse);
+  const funnel = cyl(2.5, 3, 12, supM, 16); funnel.position.set(-130, 50, 0); g.add(funnel);
+  const cMats = [makeMat('plastic'), makeMat('paint'), makeMat('steel'), makeMat('rubber')];
+  for (let row = 0; row < 8; row++) {
+    for (let col = 0; col < 5; col++) {
+      for (let h = 0; h < 3; h++) {
+        const cm = cMats[(row+col+h) % cMats.length];
+        const c = box(12, 2.5, 2.4, cm);
+        c.position.set(80 - row*15, 19.5 + h*2.6, -10 + col*5);
+        g.add(c);
+      }
+    }
+  }
+  return g;
+}
+
+function buildBicycle() {
+  const g = new THREE.Group();
+  const frameM = makeMat('aluminum', { metalness: 0.55, roughness: 0.4 });
+  const tireM = makeMat('rubber');
+  const seatM = makeMat('plastic');
+  const chainM = makeMat('steel', { metalness: 0.6, roughness: 0.4 });
+
+  for (const x of [-0.55, 0.55]) {
+    const tire = new THREE.Mesh(new THREE.TorusGeometry(0.34, 0.035, 12, 36), tireM);
+    tire.position.set(x, 0.34, 0); g.add(tire);
+    const rim = new THREE.Mesh(new THREE.TorusGeometry(0.30, 0.012, 8, 36), frameM);
+    rim.position.set(x, 0.34, 0); g.add(rim);
+    const hub = cyl(0.04, 0.04, 0.08, frameM, 12); hub.rotation.x = Math.PI/2; hub.position.set(x, 0.34, 0); g.add(hub);
+    for (let i = 0; i < 8; i++) {
+      const a = (i/8)*Math.PI*2;
+      const sp = strut(
+        new THREE.Vector3(x, 0.34, 0),
+        new THREE.Vector3(x + Math.cos(a)*0.30, 0.34 + Math.sin(a)*0.30, 0),
+        0.005, frameM
+      ); if (sp) g.add(sp);
+    }
+  }
+  const bb = new THREE.Vector3(0, 0.32, 0);
+  const headTop = new THREE.Vector3(0.50, 0.95, 0);
+  const seatTop = new THREE.Vector3(-0.20, 0.95, 0);
+  const rearAxle = new THREE.Vector3(-0.55, 0.34, 0);
+  const frontAxle = new THREE.Vector3(0.55, 0.34, 0);
+  for (const [a,b] of [
+    [bb, headTop], [bb, seatTop], [headTop, seatTop],
+    [bb, rearAxle], [seatTop, rearAxle], [headTop, frontAxle],
+  ]) {
+    const s = strut(a, b, 0.018, frameM); if (s) g.add(s);
+  }
+  const seat = box(0.20, 0.04, 0.10, seatM); seat.position.copy(seatTop).add(new THREE.Vector3(-0.05, 0.04, 0)); g.add(seat);
+  const stem = strut(headTop, headTop.clone().add(new THREE.Vector3(0, 0.14, 0)), 0.018, frameM); if (stem) g.add(stem);
+  const bar = cyl(0.012, 0.012, 0.42, frameM, 10);
+  bar.rotation.x = Math.PI/2;
+  bar.position.copy(headTop).add(new THREE.Vector3(0, 0.14, 0));
+  g.add(bar);
+  const crank = cyl(0.07, 0.07, 0.01, chainM, 16); crank.rotation.x = Math.PI/2; crank.position.copy(bb); g.add(crank);
+  return g;
+}
+
+function buildHotAirBalloon() {
+  const g = new THREE.Group();
+  const envelopeM = makeMat('nylon', { roughness: 0.7 });
+  const basketM = makeMat('wood', { roughness: 0.85 });
+  const ropeM = makeMat('nylon', { roughness: 0.9 });
+  const burnerM = makeMat('steel', { metalness: 0.5 });
+
+  const env = sph(12, envelopeM, 32);
+  env.scale.set(1.0, 1.15, 1.0);
+  env.position.y = 30;
+  g.add(env);
+  const skirt = new THREE.Mesh(new THREE.ConeGeometry(4, 4, 16, 1, true), envelopeM);
+  skirt.position.y = 18; g.add(skirt);
+  const burner = cyl(0.5, 0.5, 1.0, burnerM, 12); burner.position.y = 16; g.add(burner);
+  const basket = box(2.5, 1.4, 2.5, basketM); basket.position.y = 14; g.add(basket); g.add(edges(basket, 0x000000, 0.3));
+  for (const [x,z] of [[1.2,1.2],[-1.2,1.2],[1.2,-1.2],[-1.2,-1.2]]) {
+    const rope = strut(new THREE.Vector3(x, 14.7, z), new THREE.Vector3(x*0.4, 19, z*0.4), 0.04, ropeM);
+    if (rope) g.add(rope);
+  }
+  return g;
+}
+
+function buildHuman() {
+  const g = new THREE.Group();
+  const skinM = makeMat('water', { roughness: 0.5 });
+  const head = sph(0.11, skinM, 16); head.position.y = 1.62; g.add(head);
+  const neck = cyl(0.05, 0.06, 0.07, skinM, 12); neck.position.y = 1.50; g.add(neck);
+  const torso = box(0.36, 0.55, 0.20, skinM); torso.position.y = 1.18; g.add(torso);
+  const hips = box(0.32, 0.10, 0.20, skinM); hips.position.y = 0.86; g.add(hips);
+  for (const sx of [1, -1]) {
+    const upperArm = cyl(0.05, 0.045, 0.30, skinM, 12); upperArm.position.set(sx*0.22, 1.30, 0); g.add(upperArm);
+    const lowerArm = cyl(0.045, 0.04, 0.28, skinM, 12); lowerArm.position.set(sx*0.22, 1.00, 0); g.add(lowerArm);
+    const hand = sph(0.05, skinM, 10); hand.position.set(sx*0.22, 0.83, 0); g.add(hand);
+    const thigh = cyl(0.07, 0.06, 0.42, skinM, 12); thigh.position.set(sx*0.09, 0.59, 0); g.add(thigh);
+    const shin = cyl(0.06, 0.05, 0.40, skinM, 12); shin.position.set(sx*0.09, 0.18, 0); g.add(shin);
+    const foot = box(0.10, 0.05, 0.22, skinM); foot.position.set(sx*0.09, 0.025, 0.04); g.add(foot);
+  }
+  return g;
+}
+
+function buildDog() {
+  const g = new THREE.Group();
+  const m = makeMat('water', { roughness: 0.6 });
+  const body = box(0.55, 0.30, 0.22, m); body.position.set(0, 0.40, 0); g.add(body);
+  const chest = box(0.30, 0.30, 0.24, m); chest.position.set(0.20, 0.40, 0); g.add(chest);
+  const head = sph(0.13, m, 14); head.scale.set(1.4, 1.0, 1.0); head.position.set(0.45, 0.50, 0); g.add(head);
+  const snout = box(0.18, 0.10, 0.10, m); snout.position.set(0.58, 0.46, 0); g.add(snout);
+  for (const e of [-1,1]) { const ear = box(0.07, 0.10, 0.04, m); ear.position.set(0.40, 0.62, e*0.08); g.add(ear); }
+  const tail = cyl(0.04, 0.02, 0.30, m, 10);
+  tail.rotation.z = -0.5; tail.position.set(-0.30, 0.48, 0); g.add(tail);
+  for (const [x,z] of [[0.20,0.10],[0.20,-0.10],[-0.20,0.10],[-0.20,-0.10]]) {
+    const leg = cyl(0.04, 0.04, 0.30, m, 10); leg.position.set(x, 0.15, z); g.add(leg);
+  }
+  return g;
+}
+
+function buildElephant() {
+  const g = new THREE.Group();
+  const m = makeMat('water', { roughness: 0.7 });
+  const tuskM = makeMat('bone', { roughness: 0.4 });
+  const body = box(2.2, 1.6, 1.4, m); body.position.set(0, 1.7, 0); g.add(body); g.add(edges(body, 0x000000, 0.18));
+  const head = box(0.9, 1.1, 1.1, m); head.position.set(1.5, 1.85, 0); g.add(head);
+  for (const s of [1,-1]) { const ear = box(0.05, 0.9, 0.7, m); ear.position.set(1.5, 1.95, s*0.85); g.add(ear); }
+  let prev = new THREE.Vector3(2.1, 1.7, 0);
+  for (let i = 0; i < 8; i++) {
+    const t = i / 8;
+    const next = new THREE.Vector3(2.1 + Math.sin(t*1.2)*0.4, 1.65 - t*1.5, 0);
+    const r = 0.18 - t*0.10;
+    const seg = strut(prev, next, r, m); if (seg) g.add(seg);
+    prev = next;
+  }
+  for (const s of [1,-1]) {
+    const tusk = new THREE.Mesh(new THREE.ConeGeometry(0.08, 0.6, 10), tuskM);
+    tusk.position.set(2.0, 1.6, s*0.25); tusk.rotation.x = -Math.PI/2; tusk.rotation.z = -0.3 + s*0.1; g.add(tusk);
+  }
+  for (const [x,z] of [[0.7, 0.5],[0.7, -0.5],[-0.7, 0.5],[-0.7, -0.5]]) {
+    const leg = cyl(0.28, 0.32, 1.4, m, 14); leg.position.set(x, 0.7, z); g.add(leg);
+  }
+  const tail = cyl(0.05, 0.03, 0.6, m, 10); tail.rotation.z = -0.3; tail.position.set(-1.2, 1.4, 0); g.add(tail);
+  return g;
+}
+
+function buildBlueWhale() {
+  const g = new THREE.Group();
+  const m = makeMat('water', { roughness: 0.4 });
+  const body = sph(1, m, 24);
+  body.scale.set(12, 2.5, 3); body.position.set(0, 2.5, 0); g.add(body);
+  const head = sph(2.5, m, 20); head.scale.set(1, 0.9, 0.9); head.position.set(10, 2.5, 0); g.add(head);
+  const fluke = box(2, 0.3, 5, m); fluke.position.set(-13, 2.5, 0); g.add(fluke);
+  for (const s of [1,-1]) {
+    const fin = box(2.5, 0.2, 0.8, m); fin.position.set(2, 2, s*2.5); fin.rotation.y = s*0.3; g.add(fin);
+  }
+  const dorsal = box(0.8, 0.6, 0.15, m); dorsal.position.set(-7, 4.6, 0); g.add(dorsal);
+  return g;
+}
+
+function buildRedwood() {
+  const g = new THREE.Group();
+  const trunkM = makeMat('wood', { roughness: 0.85 });
+  const barkM = makeMat('bark', { roughness: 0.95 });
+  const trunk = cyl(0.6, 2.5, 80, trunkM, 16); trunk.position.y = 40; g.add(trunk);
+  const bark = cyl(0.7, 2.7, 80, barkM, 16); bark.position.y = 40; bark.scale.set(1.02, 1, 1.02); g.add(bark);
+  for (let i = 0; i < 30; i++) {
+    const y = 20 + Math.random()*55;
+    const ang = Math.random() * Math.PI * 2;
+    const branchLen = 4 + Math.random() * 8 * (1 - (y-20)/55);
+    const start = new THREE.Vector3(Math.cos(ang)*1.5, y, Math.sin(ang)*1.5);
+    const end = new THREE.Vector3(Math.cos(ang)*(1.5+branchLen), y + branchLen*0.3, Math.sin(ang)*(1.5+branchLen));
+    const branch = strut(start, end, 0.15 + Math.random()*0.1, trunkM); if (branch) g.add(branch);
+    const foliage = sph(branchLen*0.4, trunkM, 12); foliage.position.copy(end); foliage.scale.set(1, 0.7, 1); g.add(foliage);
+  }
+  const top = sph(4, trunkM, 12); top.position.y = 80; g.add(top);
+  return g;
+}
+
+function buildBurjKhalifa() {
+  const g = new THREE.Group();
+  const concM = makeMat('concrete', { roughness: 0.7, metalness: 0.1 });
+  const glassM = makeMat('glass', { roughness: 0.2, metalness: 0.5, transparent: true, opacity: 0.7 });
+  const sections = 30;
+  for (let i = 0; i < sections; i++) {
+    const t = i / sections;
+    const y0 = t * 750;
+    const y1 = (i+1)/sections * 750;
+    const r = 30 * (1 - t*0.85);
+    const seg = box(r*1.6, (y1-y0), r*1.6, concM);
+    seg.position.y = (y0+y1)/2;
+    seg.rotation.y = t * 0.4;
+    g.add(seg);
+    if (i % 2 === 0) {
+      const band = box(r*1.65, (y1-y0)*0.4, r*1.65, glassM);
+      band.position.y = (y0+y1)/2;
+      band.rotation.y = t * 0.4;
+      g.add(band);
+    }
+  }
+  const spire = cyl(0.5, 6, 78, concM, 8); spire.position.y = 750 + 39; g.add(spire);
+  return g;
+}
+
+function buildApolloRocket() {
+  const g = new THREE.Group();
+  const skinM = makeMat('aluminum', { metalness: 0.4, roughness: 0.4 });
+  const blackM = makeMat('rubber', { roughness: 0.8 });
+  const engineM = makeMat('titanium', { metalness: 0.5, roughness: 0.5 });
+  const s1 = cyl(5.05, 5.05, 42, skinM, 24); s1.position.y = 21; g.add(s1);
+  for (const yb of [10, 30]) { const b = cyl(5.06, 5.06, 1.5, blackM, 24); b.position.y = yb; g.add(b); }
+  const inter1 = cyl(5.05, 5.05, 5, skinM, 24); inter1.position.y = 44.5; g.add(inter1);
+  const s2 = cyl(5.05, 5.05, 25, skinM, 24); s2.position.y = 59.5; g.add(s2);
+  const inter2 = cyl(5.05, 3.30, 5, skinM, 24); inter2.position.y = 74.5; g.add(inter2);
+  const s3 = cyl(3.30, 3.30, 18, skinM, 24); s3.position.y = 86; g.add(s3);
+  const sm = cyl(1.95, 1.95, 7, skinM, 16); sm.position.y = 98.5; g.add(sm);
+  const cm = new THREE.Mesh(new THREE.ConeGeometry(1.95, 3.5, 16), skinM); cm.position.y = 103.75; g.add(cm);
+  // Launch escape tower — single tapered pole reaching the iconic 110.6 m top
+  const les = cyl(0.3, 0.5, 4.5, skinM, 8); les.position.y = 107.75; g.add(les);
+  for (let i = 0; i < 4; i++) {
+    const ang = (i/4)*Math.PI*2 + Math.PI/4;
+    const fin = box(0.3, 4, 2.5, skinM);
+    fin.position.set(Math.cos(ang)*5.7, 2.5, Math.sin(ang)*5.7);
+    fin.rotation.y = ang;
+    g.add(fin);
+  }
+  return g;
+}
+
+function buildNotreDame() {
+  const g = new THREE.Group();
+  const stoneM = makeMat('limestone', { roughness: 0.9 });
+  const leadM = makeMat('lead', { metalness: 0.3, roughness: 0.6 });
+  const woodM = makeMat('wood', { roughness: 0.85 });
+  const glassM = makeMat('glass', { transparent: true, opacity: 0.6 });
+  const nave = box(127, 35, 14, stoneM); nave.position.y = 17.5; g.add(nave); g.add(edges(nave, 0x000000, 0.15));
+  const trans = box(20, 33, 40, stoneM); trans.position.y = 16.5; g.add(trans); g.add(edges(trans, 0x000000, 0.15));
+  const roof = box(127, 8, 15, leadM); roof.position.y = 39; g.add(roof);
+  const spire = new THREE.Mesh(new THREE.ConeGeometry(4, 60, 8), woodM);
+  spire.position.set(20, 65, 0); g.add(spire);
+  const spireSheath = new THREE.Mesh(new THREE.ConeGeometry(4.05, 60, 8), leadM);
+  spireSheath.position.set(20, 65, 0); spireSheath.scale.set(1.01, 1, 1.01); g.add(spireSheath);
+  for (const s of [1, -1]) {
+    const tower = box(13, 50, 13, stoneM); tower.position.set(60, 25, s*10); g.add(tower); g.add(edges(tower, 0x000000, 0.18));
+    const opening = box(13.1, 8, 13.1, glassM); opening.position.set(60, 35, s*10); g.add(opening);
+  }
+  const facade = box(2, 35, 35, stoneM); facade.position.set(67, 17.5, 0); g.add(facade);
+  const rose = cyl(4, 4, 0.5, glassM, 24); rose.rotation.z = Math.PI/2; rose.position.set(68, 22, 0); g.add(rose);
+  for (const s of [1, -1]) {
+    for (let i = 0; i < 5; i++) {
+      const x = -40 + i*15;
+      const but = strut(
+        new THREE.Vector3(x, 28, s*7),
+        new THREE.Vector3(x, 8, s*15),
+        0.5, stoneM
+      ); if (but) g.add(but);
+    }
+  }
+  return g;
+}
+
+function buildStLouisArch() {
+  const g = new THREE.Group();
+  const steelM = makeMat('steel', { metalness: 0.85, roughness: 0.25 });
+  const concreteM = makeMat('concrete', { roughness: 0.85 });
+  // Catenary arch (weighted): y = A − B·cosh(C·x), scaled to peak 192m
+  const A = 211.49, B = 20.96, C = 0.0329;
+  const segments = 80;
+  let prev = null;
+  const halfWidth = Math.acosh(A/B) / C;
+  const scale = 192 / (A - B);
+  for (let i = 0; i <= segments; i++) {
+    const t = i / segments;
+    const x = -halfWidth + t * 2 * halfWidth;
+    const y = (A - B * Math.cosh(C * x)) * scale;
+    const point = new THREE.Vector3(x, y, 0);
+    if (prev) {
+      const seg = strut(prev, point, 5, steelM); if (seg) g.add(seg);
+    }
+    prev = point;
+  }
+  for (const sx of [-1, 1]) {
+    const pad = box(20, 8, 20, concreteM); pad.position.set(sx*halfWidth, -4, 0); g.add(pad);
+  }
+  return g;
+}
+
+function buildWashingtonMonument() {
+  const g = new THREE.Group();
+  const marbleM = makeMat('marble', { roughness: 0.5, metalness: 0.05 });
+  const graniteM = makeMat('granite', { roughness: 0.7 });
+  const lower = new THREE.Mesh(new THREE.BoxGeometry(16.8, 46, 16.8), graniteM);
+  lower.position.y = 23; g.add(lower); g.add(edges(lower,0x000000,0.18));
+  const shaft = new THREE.Mesh(
+    new THREE.CylinderGeometry(10.5/Math.SQRT2, 16.8/Math.SQRT2, 106, 4),
+    marbleM
+  );
+  shaft.rotation.y = Math.PI/4;
+  shaft.position.y = 46 + 53; g.add(shaft);
+  const pyr = new THREE.Mesh(
+    new THREE.CylinderGeometry(0, 10.5/Math.SQRT2, 17, 4),
+    marbleM
+  );
+  pyr.rotation.y = Math.PI/4;
+  pyr.position.y = 46 + 106 + 8.5; g.add(pyr);
+  return g;
+}
+
+function buildLaptop() {
+  const g = new THREE.Group();
+  const chassisM = makeMat('aluminum', { metalness: 0.55, roughness: 0.45 });
+  const keyM = makeMat('plastic', { roughness: 0.75 });
+  const screenBezel = makeMat('plastic', { color: '#1a1a1e', roughness: 0.7 });
+  const screenGlass = makeMat('glass', {
+    color: '#4a5a6e', transparent: true, opacity: 0.85,
+    emissive: 0x1a2535, emissiveIntensity: 0.3,
+  });
+  const trackpadM = makeMat('glass', { roughness: 0.35, metalness: 0.1 });
+
+  // Base unit: 14-inch laptop, ~32 × 22 × 1.8 cm
+  const baseW = 0.32, baseD = 0.22, baseH = 0.018;
+  const base = box(baseW, baseH, baseD, chassisM);
+  base.position.y = baseH / 2;
+  g.add(base);
+  g.add(edges(base, 0x000000, 0.18));
+
+  // Keyboard well — a slightly recessed dark rectangle on top of the base
+  const kbW = 0.28, kbD = 0.10;
+  const kb = box(kbW, 0.001, kbD, keyM);
+  kb.position.set(0, baseH + 0.0005, -0.02);
+  g.add(kb);
+
+  // Individual key suggestions — a 4-row × 12-col grid of tiny boxes
+  const cols = 12, rows = 4;
+  const keyW = (kbW - 0.005) / cols * 0.85;
+  const keyD = (kbD - 0.005) / rows * 0.85;
+  const stepX = (kbW - 0.005) / cols;
+  const stepZ = (kbD - 0.005) / rows;
+  for (let r = 0; r < rows; r++) {
+    for (let c = 0; c < cols; c++) {
+      const k = box(keyW, 0.002, keyD, keyM);
+      k.position.set(
+        -kbW / 2 + 0.003 + c * stepX + stepX / 2,
+        baseH + 0.001,
+        -0.02 - kbD / 2 + 0.003 + r * stepZ + stepZ / 2
+      );
+      g.add(k);
+    }
+  }
+
+  // Trackpad — wider rectangle below the keyboard
+  const trackpad = box(0.105, 0.0005, 0.07, trackpadM);
+  trackpad.position.set(0, baseH + 0.00025, 0.065);
+  g.add(trackpad);
+
+  // Screen lid assembly — build it upright (vertical, oriented along the
+  // X-Y plane with thickness in Z), then tilt back at the hinge.
+  // Lid dimensions: same footprint as base (32 × 22 cm), 6 mm thick.
+  const lidW = baseW;
+  const lidH = baseD;   // when upright, the lid's "height" equals base depth
+  const lidT = 0.006;   // thickness
+
+  const lid = new THREE.Group();
+
+  // Outer lid shell — a thin slab, thickness along Z (will become "behind" the screen)
+  const lidShell = box(lidW, lidH, lidT, chassisM);
+  lidShell.position.set(0, lidH / 2, -lidT / 2);
+  lid.add(lidShell);
+  lid.add(edges(lidShell, 0x000000, 0.2));
+
+  // Screen bezel — a slightly inset dark frame on the FRONT face (positive Z relative to shell front)
+  const bezelW = lidW - 0.014;
+  const bezelH = lidH - 0.014;
+  const bezel = box(bezelW, bezelH, 0.0008, screenBezel);
+  bezel.position.set(0, lidH / 2, 0.0004);
+  lid.add(bezel);
+
+  // Glass screen — slightly smaller and slightly forward of the bezel
+  const glassW = bezelW - 0.010;
+  const glassH = bezelH - 0.010;
+  const glass = box(glassW, glassH, 0.0005, screenGlass);
+  glass.position.set(0, lidH / 2, 0.001);
+  lid.add(glass);
+
+  // Position lid group at the rear hinge of the base, then rotate it back.
+  // Hinge is at y = baseH (top of base) and z = -baseD/2 (rear edge of base).
+  lid.position.set(0, baseH, -baseD / 2);
+  // Rotate around X (hinge axis): negative angle tips the top of the lid
+  // backward. Use -20° past vertical for a typical "open" laptop angle.
+  lid.rotation.x = -(20 * Math.PI / 180);
+  g.add(lid);
+
+  return g;
+}
+
+function buildCardboardBox() {
+  const g = new THREE.Group();
+  const cardM = makeMat('cardboard', { roughness: 0.92, metalness: 0 });
+
+  // Standard medium moving box: 46 × 46 × 41 cm. Build as 5 thin panels
+  // (4 walls + bottom) so it looks like an open-top box from above and a
+  // closed box from the side.
+  const W = 0.46, D = 0.46, H = 0.41;
+  const t = 0.005;  // cardboard wall thickness
+
+  // Bottom
+  const bot = box(W, t, D, cardM);
+  bot.position.set(0, t / 2, 0);
+  g.add(bot);
+  g.add(edges(bot, 0x3a2410, 0.4));
+
+  // Walls (4)
+  const front = box(W, H, t, cardM);
+  front.position.set(0, H / 2, D / 2 - t / 2);
+  g.add(front);
+  g.add(edges(front, 0x3a2410, 0.4));
+
+  const back = box(W, H, t, cardM);
+  back.position.set(0, H / 2, -D / 2 + t / 2);
+  g.add(back);
+  g.add(edges(back, 0x3a2410, 0.4));
+
+  const leftW = box(t, H, D - 2 * t, cardM);
+  leftW.position.set(-W / 2 + t / 2, H / 2, 0);
+  g.add(leftW);
+  g.add(edges(leftW, 0x3a2410, 0.4));
+
+  const rightW = box(t, H, D - 2 * t, cardM);
+  rightW.position.set(W / 2 - t / 2, H / 2, 0);
+  g.add(rightW);
+  g.add(edges(rightW, 0x3a2410, 0.4));
+
+  // Top flaps — folded open outward at ~110°
+  // Two flaps along the long sides (W direction), two along the short sides (D direction)
+  const flapW1 = W, flapD1 = D / 2 - t;
+  const flap1 = new THREE.Group();
+  const flap1Mesh = box(flapW1, t, flapD1, cardM);
+  flap1Mesh.position.set(0, 0, flapD1 / 2);
+  flap1.add(flap1Mesh);
+  flap1.add(edges(flap1Mesh, 0x3a2410, 0.4));
+  flap1.position.set(0, H, D / 2 - t);
+  flap1.rotation.x = (20 * Math.PI / 180);  // open outward
+  g.add(flap1);
+
+  const flap2 = new THREE.Group();
+  const flap2Mesh = box(flapW1, t, flapD1, cardM);
+  flap2Mesh.position.set(0, 0, -flapD1 / 2);
+  flap2.add(flap2Mesh);
+  flap2.add(edges(flap2Mesh, 0x3a2410, 0.4));
+  flap2.position.set(0, H, -D / 2 + t);
+  flap2.rotation.x = -(20 * Math.PI / 180);
+  g.add(flap2);
+
+  return g;
+}
+
+function buildShoe() {
+  const g = new THREE.Group();
+  const soleM = makeMat('rubber', { roughness: 0.9 });
+  const midsoleM = makeMat('plastic', { color: '#f0ede4', roughness: 0.85 });
+  const upperM = makeMat('nylon', { color: '#3a5570', roughness: 0.88 });
+  const upperAccentM = makeMat('nylon', { color: '#1a2535', roughness: 0.88 });
+  const laceM = makeMat('nylon', { color: '#e8e4d6', roughness: 0.9 });
+
+  const N = 24;
+  const SOLE_TOP = 0.034;
+
+  // ---- Cross-section generator ----
+  // Each cross-section is a closed loop of N points in the YZ plane,
+  // shaped like an ellipse with: (a) the bottom flattened to sit on the
+  // sole, and (b) an optional dip pulling the upper region toward the
+  // center. The dip is what creates the throat/ankle opening as part of
+  // the mesh itself — without it the shoe is a closed dome; with it the
+  // top has a visible concavity where the foot enters.
+  function crossSection(widthZ, heightY, topDip) {
+    const pts = [];
+    for (let i = 0; i < N; i++) {
+      const theta = (i / N) * Math.PI * 2;
+      let cz = Math.cos(theta);
+      let cy = Math.sin(theta);
+      // Flatten bottom (shoe sits on a sole)
+      if (cy < -0.5) cy = -0.5;
+      // Top dip: in the upper half, pull cy down based on how close to
+      // the center the point is. At the very top (cz=0), the full dip is
+      // applied. At the sides (cz=±1), no dip. This creates a smooth
+      // concavity centered on the top.
+      if (cy > 0 && topDip > 0) {
+        const centeredness = 1 - Math.abs(cz);
+        cy = cy * (1 - topDip * centeredness);
+      }
+      const z = cz * widthZ;
+      const y = SOLE_TOP + (cy + 0.5) * heightY;
+      pts.push([y, z]);
+    }
+    return pts;
+  }
+
+  // 13 stations along the foot's length. Heights designed so the ankle
+  // collar (where topDip is deep) has tall side peaks rising above the
+  // closed top of the forefoot. Cross-section #0 is small and CLOSED
+  // (dip=0) so it can be capped cleanly as the rear of the shoe; dip
+  // ramps up moving forward into the ankle area, then back down to 0
+  // over the toe.
+  const stations = [
+    { x: -0.140, w: 0.028, h: 0.045, dip: 0.00 },  // closed back tip
+    { x: -0.123, w: 0.040, h: 0.058, dip: 0.30 },  // heel back curve
+    { x: -0.105, w: 0.046, h: 0.071, dip: 0.75 },  // back of ankle
+    { x: -0.080, w: 0.050, h: 0.072, dip: 0.85 },  // ankle deepest
+    { x: -0.055, w: 0.053, h: 0.062, dip: 0.75 },  // throat back
+    { x: -0.030, w: 0.055, h: 0.050, dip: 0.65 },  // lace center
+    { x: -0.005, w: 0.057, h: 0.040, dip: 0.45 },  // front of laces
+    { x:  0.025, w: 0.058, h: 0.030, dip: 0.15 },  // pre-ball
+    { x:  0.055, w: 0.058, h: 0.028, dip: 0.00 },  // ball
+    { x:  0.085, w: 0.055, h: 0.025, dip: 0.00 },  // forefoot
+    { x:  0.115, w: 0.045, h: 0.019, dip: 0.00 },  // toe approach
+    { x:  0.135, w: 0.030, h: 0.011, dip: 0.00 },  // toe
+    { x:  0.152, w: 0.012, h: 0.004, dip: 0.00 },  // toe tip
+  ];
+
+  // ---- Build positions + indices for the upper mesh ----
+  const positions = [];
+  const indices = [];
+
+  for (const st of stations) {
+    const profile = crossSection(st.w, st.h, st.dip);
+    for (const [y, z] of profile) {
+      positions.push(st.x, y, z);
+    }
+  }
+  // Stitch adjacent cross-sections with triangle strips
+  for (let s = 0; s < stations.length - 1; s++) {
+    const base0 = s * N;
+    const base1 = (s + 1) * N;
+    for (let i = 0; i < N; i++) {
+      const ni = (i + 1) % N;
+      indices.push(base0 + i, base1 + i, base0 + ni);
+      indices.push(base0 + ni, base1 + i, base1 + ni);
+    }
+  }
+
+  // Toe cap (fan to a single point just forward of the last station)
+  const lastSta = stations[stations.length - 1];
+  const lastBase = (stations.length - 1) * N;
+  const tipIdx = positions.length / 3;
+  positions.push(lastSta.x + 0.003, SOLE_TOP + 0.002, 0);
+  for (let i = 0; i < N; i++) {
+    const ni = (i + 1) % N;
+    indices.push(lastBase + i, tipIdx, lastBase + ni);
+  }
+
+  // Heel cap (fan to a point just behind cross-section #0, at the
+  // average y/z of that cross-section's perimeter — creates a rounded
+  // back rather than a flat one)
+  let y_sum = 0, z_sum = 0;
+  for (let i = 0; i < N; i++) {
+    y_sum += positions[i * 3 + 1];
+    z_sum += positions[i * 3 + 2];
+  }
+  const heelTipIdx = positions.length / 3;
+  positions.push(stations[0].x - 0.005, y_sum / N, z_sum / N);
+  for (let i = 0; i < N; i++) {
+    const ni = (i + 1) % N;
+    // Winding (heelTip, i, ni) — normal points in -X (outward from rear).
+    // The reverse order (heelTip, ni, i) gives an inward normal which is
+    // backface-culled, making the back of the shoe appear missing.
+    indices.push(heelTipIdx, i, ni);
+  }
+
+  const upperGeo = new THREE.BufferGeometry();
+  upperGeo.setAttribute('position', new THREE.Float32BufferAttribute(positions, 3));
+  upperGeo.setIndex(indices);
+  upperGeo.computeVertexNormals();
+  g.add(new THREE.Mesh(upperGeo, upperM));
+
+  // ---- Sole and midsole ----
+  // Trace +Z side from heel to toe, round over the toe with intermediate
+  // points so it isn't a flat cliff, then trace -Z side back. The toe
+  // round-over extends a few mm past the last station so the sole
+  // covers the upper's toe-cap tip (which sits at lastSta.x + 0.003).
+  const outline = [];
+  for (let s = 0; s < stations.length; s++) {
+    let maxZ = -Infinity;
+    for (let i = 0; i < N; i++) {
+      const z = positions[(s * N + i) * 3 + 2];
+      if (z > maxZ) maxZ = z;
+    }
+    outline.push([stations[s].x, maxZ]);
+  }
+  // Toe round-over: smooth arc from (lastSta.x, +maxZ) through apex to (lastSta.x, -maxZ)
+  const _lastSta = stations[stations.length - 1];
+  const _lastTopZ = outline[outline.length - 1][1];
+  outline.push([_lastSta.x + 0.0015, _lastTopZ * 0.65]);
+  outline.push([_lastSta.x + 0.003,  0]);
+  outline.push([_lastSta.x + 0.0015, -_lastTopZ * 0.65]);
+  for (let s = stations.length - 1; s >= 0; s--) {
+    let minZ = Infinity;
+    for (let i = 0; i < N; i++) {
+      const z = positions[(s * N + i) * 3 + 2];
+      if (z < minZ) minZ = z;
+    }
+    outline.push([stations[s].x, minZ]);
+  }
+
+  function extrudeSlab(corners, height, mat, yBottom) {
+    const shape = new THREE.Shape();
+    shape.moveTo(corners[0][0], corners[0][1]);
+    for (let i = 1; i < corners.length; i++) shape.lineTo(corners[i][0], corners[i][1]);
+    shape.closePath();
+    const geo = new THREE.ExtrudeGeometry(shape, { depth: height, bevelEnabled: false });
+    geo.rotateX(-Math.PI / 2);
+    geo.translate(0, height + yBottom, 0);
+    return new THREE.Mesh(geo, mat);
+  }
+  g.add(extrudeSlab(outline, 0.012, soleM, 0));
+  const midOutline = outline.map(([x, z]) => [x * 0.98, z * 0.95]);
+  g.add(extrudeSlab(midOutline, 0.022, midsoleM, 0.012));
+
+  // ---- Tongue: dark patch visible inside the throat depression ----
+  // Sits below the side-peak rims but above the dipped top centers, so
+  // it peeks through the lace area visibly.
+  const tongue = box(0.052, 0.004, 0.044, upperAccentM);
+  tongue.position.set(-0.022, SOLE_TOP + 0.046, 0);
+  g.add(tongue);
+
+  // ---- Laces: 3 flat bands bridging the throat depression ----
+  // Y position tapers from higher at the back (where the throat is
+  // deeper) to lower at the front, matching the throat's natural slope.
+  for (let i = 0; i < 3; i++) {
+    const lx = -0.045 + i * 0.020;
+    const ly = SOLE_TOP + 0.065 - i * 0.008;
+    const lace = box(0.005, 0.0025, 0.062, laceM);
+    lace.position.set(lx, ly, 0);
+    g.add(lace);
+    for (const sz of [1, -1]) {
+      const eye = box(0.007, 0.0025, 0.005, upperAccentM);
+      eye.position.set(lx, ly + 0.0003, sz * 0.028);
+      g.add(eye);
+    }
+  }
+
+  return g;
+}
+
+function buildSoccerBall() {
+  const g = new THREE.Group();
+  const R = 0.11;  // FIFA size 5 ball radius (22 cm diameter)
+
+  // ---- 32 face-center directions for the truncated icosahedron ----
+  // The 12 pentagon centers are at the icosahedron's 12 vertices.
+  // The 20 hexagon centers are at the centroids of the icosahedron's 20 faces.
+  const phi = (1 + Math.sqrt(5)) / 2;
+  const icoVerts = [
+    [ 0,  1,  phi], [ 0,  1, -phi], [ 0, -1,  phi], [ 0, -1, -phi],
+    [ 1,  phi,  0], [ 1, -phi,  0], [-1,  phi,  0], [-1, -phi,  0],
+    [ phi,  0,  1], [-phi,  0,  1], [ phi,  0, -1], [-phi,  0, -1],
+  ];
+  function normalize(v) {
+    const m = Math.sqrt(v[0]*v[0] + v[1]*v[1] + v[2]*v[2]);
+    return [v[0]/m, v[1]/m, v[2]/m];
+  }
+  const pentCenters = icoVerts.map(normalize);
+
+  // Find icosahedron faces (triples of mutually-edge-connected vertices).
+  const adj = Array.from({length: 12}, () => []);
+  for (let i = 0; i < 12; i++) {
+    for (let j = i+1; j < 12; j++) {
+      const d2 = (icoVerts[i][0]-icoVerts[j][0])**2
+               + (icoVerts[i][1]-icoVerts[j][1])**2
+               + (icoVerts[i][2]-icoVerts[j][2])**2;
+      if (Math.abs(d2 - 4) < 0.01) { adj[i].push(j); adj[j].push(i); }
+    }
+  }
+  const icoFaces = [];
+  for (let i = 0; i < 12; i++)
+    for (const j of adj[i]) if (j > i)
+      for (const k of adj[j]) if (k > j && adj[k].includes(i))
+        icoFaces.push([i, j, k]);
+
+  const hexCenters = icoFaces.map(([a, b, c]) => normalize([
+    (icoVerts[a][0] + icoVerts[b][0] + icoVerts[c][0]) / 3,
+    (icoVerts[a][1] + icoVerts[b][1] + icoVerts[c][1]) / 3,
+    (icoVerts[a][2] + icoVerts[b][2] + icoVerts[c][2]) / 3,
+  ]));
+
+  // ---- Build the sphere with per-triangle colors ----
+  // IcosahedronGeometry subdivides each icosahedron face into detail^2
+  // small triangles distributed evenly on the sphere -- better than
+  // SphereGeometry's latitude/longitude grid which pinches at the poles.
+  const sphereGeo = new THREE.IcosahedronGeometry(R, 12).toNonIndexed();
+  const positions = sphereGeo.attributes.position;
+  const triCount = positions.count / 3;
+  const colors = new Float32Array(positions.count * 3);
+
+  const black = new THREE.Color('#1a1a1a');
+  const white = new THREE.Color('#f0ebe0');
+
+  for (let t = 0; t < triCount; t++) {
+    // Centroid of this triangle, projected to unit sphere
+    let cx = 0, cy = 0, cz = 0;
+    for (let v = 0; v < 3; v++) {
+      cx += positions.getX(t*3 + v);
+      cy += positions.getY(t*3 + v);
+      cz += positions.getZ(t*3 + v);
+    }
+    cx /= 3; cy /= 3; cz /= 3;
+    const m = Math.sqrt(cx*cx + cy*cy + cz*cz);
+    cx /= m; cy /= m; cz /= m;
+
+    // Find the nearest face center (max dot product = min angular distance)
+    let bestDot = -Infinity;
+    let isPentagon = false;
+    for (const c of pentCenters) {
+      const d = cx*c[0] + cy*c[1] + cz*c[2];
+      if (d > bestDot) { bestDot = d; isPentagon = true; }
+    }
+    for (const c of hexCenters) {
+      const d = cx*c[0] + cy*c[1] + cz*c[2];
+      if (d > bestDot) { bestDot = d; isPentagon = false; }
+    }
+
+    const color = isPentagon ? black : white;
+    for (let v = 0; v < 3; v++) {
+      colors[(t*3 + v) * 3    ] = color.r;
+      colors[(t*3 + v) * 3 + 1] = color.g;
+      colors[(t*3 + v) * 3 + 2] = color.b;
+    }
+  }
+  sphereGeo.setAttribute('color', new THREE.BufferAttribute(colors, 3));
+
+  const ball = new THREE.Mesh(
+    sphereGeo,
+    new THREE.MeshStandardMaterial({ vertexColors: true, roughness: 0.55 })
+  );
+  ball.position.y = R;
+  g.add(ball);
+
+  return g;
+}
+
+
+function buildSodaCan() {
+  const g = new THREE.Group();
+  const bodyM  = makeMat('aluminum', { color: '#c8302c', roughness: 0.45, metalness: 0.6 });  // painted red
+  const topM   = makeMat('aluminum', { roughness: 0.35, metalness: 0.85 });  // bare aluminum top
+  const tabM   = makeMat('aluminum', { roughness: 0.35, metalness: 0.9 });
+
+  // 12 oz can: 6.6 cm diameter, 12.2 cm tall
+  const R = 0.033;
+  const H = 0.122;
+
+  // Main body: a tapered cylinder, narrower at top and bottom rims
+  // (classic soda-can necked-in profile)
+  const Rrim = R * 0.92;
+  // Bottom dome (very subtle inset)
+  const bottomDome = cyl(R, Rrim, 0.005, bodyM, 32);
+  bottomDome.position.y = 0.0025;
+  g.add(bottomDome);
+
+  // Main barrel: straight cylinder for most of the height
+  const barrel = cyl(R, R, H - 0.018, bodyM, 32);
+  barrel.position.y = 0.005 + (H - 0.018) / 2;
+  g.add(barrel);
+
+  // Top neck: tapers from full radius to the rim radius
+  const neck = cyl(Rrim, R, 0.010, bodyM, 32);
+  neck.position.y = H - 0.013;
+  g.add(neck);
+
+  // Top lid: bare aluminum disc
+  const lid = cyl(Rrim, Rrim, 0.003, topM, 32);
+  lid.position.y = H - 0.0065;
+  g.add(lid);
+
+  // Pull-tab: a small flat ring with a lever
+  const tabRing = new THREE.Mesh(
+    new THREE.TorusGeometry(0.008, 0.0012, 6, 16),
+    tabM
+  );
+  tabRing.rotation.x = Math.PI / 2;
+  tabRing.position.set(0.008, H - 0.0045, 0);
+  g.add(tabRing);
+  // Tab lever
+  const tabLever = box(0.018, 0.0008, 0.006, tabM);
+  tabLever.position.set(-0.001, H - 0.0045, 0);
+  g.add(tabLever);
+
+  return g;
+}
+
+function buildMilkJug() {
+  const g = new THREE.Group();
+  const jugM = makeMat('plastic', { color: '#f5f3ed', roughness: 0.75, metalness: 0, transparent: true, opacity: 0.88 });
+  const capM = makeMat('plastic', { color: '#7a96d2', roughness: 0.6 });
+  const labelM = makeMat('plastic', { color: '#f8f6f0', roughness: 0.85 });
+
+  // ---- Body: stack of rounded-square cross-sections stitched into one mesh ----
+  // Each cross-section is a "squircle": points around a perimeter that's
+  // between a square and a circle, controlled by `squareness` (0 = circle,
+  // 1 = square). Varying scale and squareness with height gives the
+  // characteristic milk-jug profile: wide rounded-square lower body,
+  // shoulders curving inward, narrow round neck.
+  const N = 32;  // points per cross-section perimeter
+
+  function squircle(halfW, halfD, squareness, cx, cz) {
+    // Squircle parametrization: a superellipse.
+    // For squareness s in [0, 1], use exponent n = 2 + 6*s, so n=2 is a
+    // perfect ellipse and n=8 is a soft rounded square.
+    const n = 2 + 6 * squareness;
+    const pts = [];
+    for (let i = 0; i < N; i++) {
+      const theta = (i / N) * Math.PI * 2;
+      const cosT = Math.cos(theta), sinT = Math.sin(theta);
+      const x = Math.sign(cosT) * Math.pow(Math.abs(cosT), 2/n) * halfW;
+      const z = Math.sign(sinT) * Math.pow(Math.abs(sinT), 2/n) * halfD;
+      pts.push([cx + x, cz + z]);
+    }
+    return pts;
+  }
+
+  // Vertical stations: y, halfWidth (X), halfDepth (Z), squareness
+  // Body is ~14 cm wide × 14 cm deep at the widest, ~21 cm tall total.
+  const stations = [
+    // y,     hW,    hD,    sq
+    { y: 0.000, w: 0.060, d: 0.060, s: 0.70 },  // bottom edge (slightly inset)
+    { y: 0.007, w: 0.070, d: 0.070, s: 0.85 },  // base
+    { y: 0.035, w: 0.072, d: 0.072, s: 0.85 },  // lower body (widest)
+    { y: 0.085, w: 0.072, d: 0.072, s: 0.85 },  // upper body
+    { y: 0.112, w: 0.069, d: 0.069, s: 0.80 },  // start of shoulder
+    { y: 0.135, w: 0.058, d: 0.058, s: 0.55 },  // shoulder curve
+    { y: 0.152, w: 0.040, d: 0.040, s: 0.20 },  // upper shoulder
+    { y: 0.168, w: 0.024, d: 0.024, s: 0.00 },  // neck base (now round)
+    { y: 0.192, w: 0.022, d: 0.022, s: 0.00 },  // neck
+  ];
+
+  // Build positions
+  const positions = [];
+  for (const st of stations) {
+    const profile = squircle(st.w, st.d, st.s, 0, 0);
+    for (const [x, z] of profile) positions.push(x, st.y, z);
+  }
+
+  // Stitch adjacent rings
+  const indices = [];
+  for (let s = 0; s < stations.length - 1; s++) {
+    const base0 = s * N, base1 = (s + 1) * N;
+    for (let i = 0; i < N; i++) {
+      const ni = (i + 1) % N;
+      indices.push(base0 + i, base1 + i, base0 + ni);
+      indices.push(base0 + ni, base1 + i, base1 + ni);
+    }
+  }
+
+  // Bottom cap (fan to center point at y=0)
+  const bottomCenterIdx = positions.length / 3;
+  positions.push(0, 0, 0);
+  for (let i = 0; i < N; i++) {
+    const ni = (i + 1) % N;
+    indices.push(bottomCenterIdx, ni, i);  // winding for downward-facing normal
+  }
+
+  // Top of neck cap (fan to center point)
+  const topY = stations[stations.length - 1].y;
+  const topCenterIdx = positions.length / 3;
+  positions.push(0, topY, 0);
+  const topBase = (stations.length - 1) * N;
+  for (let i = 0; i < N; i++) {
+    const ni = (i + 1) % N;
+    indices.push(topBase + i, topCenterIdx, topBase + ni);
+  }
+
+  const bodyGeo = new THREE.BufferGeometry();
+  bodyGeo.setAttribute('position', new THREE.Float32BufferAttribute(positions, 3));
+  bodyGeo.setIndex(indices);
+  bodyGeo.computeVertexNormals();
+  g.add(new THREE.Mesh(bodyGeo, jugM));
+
+  // ---- Cap: a small disc with ribbed grip rings on top of the neck ----
+  const capR = 0.019;  // ~3.8 cm diameter, realistic for milk jug
+  const cap = cyl(capR, capR, 0.018, capM, 24);
+  cap.position.y = topY + 0.009;
+  g.add(cap);
+  for (let i = 0; i < 4; i++) {
+    const ring = new THREE.Mesh(
+      new THREE.TorusGeometry(capR + 0.0008, 0.0007, 6, 24),
+      capM
+    );
+    ring.rotation.x = Math.PI / 2;
+    ring.position.y = topY + 0.003 + i * 0.004;
+    g.add(ring);
+  }
+
+  // ---- Handle: a C-shaped strap on the right (+X) side of the jug ----
+  // Endpoints are deliberately set INSIDE the jug body (smaller X than the
+  // jug's outer radius at that height), so the tube's open end caps are
+  // hidden inside the wall rather than floating in space. Pass `true` as
+  // the last arg to TubeGeometry to close the ends explicitly too.
+  const handleAttachUpper = { x: 0.055, y: 0.130 };  // inside upper shoulder
+  const handleAttachLower = { x: 0.060, y: 0.072 };  // inside lower body
+  const handleArcX = 0.105;
+  const handleArcMidY = (handleAttachUpper.y + handleAttachLower.y) / 2;
+
+  function bez(t, p0, p1, p2) {
+    const u = 1 - t;
+    return {
+      x: u*u*p0.x + 2*u*t*p1.x + t*t*p2.x,
+      y: u*u*p0.y + 2*u*t*p1.y + t*t*p2.y,
+    };
+  }
+  const handlePts = [];
+  const handleSegs = 14;
+  for (let i = 0; i <= handleSegs; i++) {
+    const t = i / handleSegs;
+    const p = bez(t, handleAttachLower, { x: handleArcX, y: handleArcMidY }, handleAttachUpper);
+    handlePts.push(new THREE.Vector3(p.x, p.y, 0));
+  }
+  const handleCurve = new THREE.CatmullRomCurve3(handlePts);
+  const handleGeo = new THREE.TubeGeometry(handleCurve, 24, 0.008, 10, false);
+  g.add(new THREE.Mesh(handleGeo, jugM));
+
+  // ---- Front label patch ----
+  const label = box(0.075, 0.045, 0.001, labelM);
+  label.position.set(0, 0.060, 0.073);
+  g.add(label);
+
+  return g;
+}
+
+
+/* ===========================================================
+   Object library — volumes in m³
+   =========================================================== */
+const OBJECTS = {
+  // ---- Vehicles & Craft ----
+  apollo: {
+    category: 'Vehicles & Craft',
+    name: 'Apollo / Saturn V Rocket',
+    location: '1967–1973 · 110 m · fully fueled · ~2,970 t',
+    materials: { propellant: 2900, aluminum: 38, steel: 2.0, titanium: 0.8, composite: 2 },
+    build: buildApolloRocket,
+  },
+  bicycle: {
+    category: 'Vehicles & Craft',
+    name: 'Bicycle',
+    location: 'Generic road bike · ~10 kg',
+    materials: { aluminum: 0.0015, steel: 0.0005, rubber: 0.0008, plastic: 0.0009 },
+    build: buildBicycle,
+  },
+  jet: {
+    category: 'Vehicles & Craft',
+    name: 'Boeing 747-400',
+    location: '70.6 m long · 64.4 m wingspan · fully fueled · ~355 t',
+    materials: { aluminum: 50, steel: 2.3, titanium: 2.0, composite: 5.6, plastic: 1.5, glass: 0.3, rubber: 1.5, fuel: 216 },
+    build: buildBoeing747,
+  },
+  freighter: {
+    category: 'Vehicles & Craft',
+    name: 'Cargo Freighter',
+    location: 'Panamax bulk carrier · ~290 m · fully fueled · ~18,000 t',
+    materials: { steel: 1900, concrete: 100, paint: 12, plastic: 25, fuel: 3500, rubber: 5 },
+    build: buildCargoFreighter,
+  },
+  locomotive: {
+    category: 'Vehicles & Craft',
+    name: 'Diesel-Electric Locomotive',
+    location: 'Generic · ~21 m · fully fueled · ~180 t',
+    materials: { steel: 16.6, fuel: 18, plastic: 1, copper: 0.56, aluminum: 0.56, rubber: 0.5 },
+    build: buildLocomotive,
+  },
+  balloon: {
+    category: 'Vehicles & Craft',
+    name: 'Hot Air Balloon',
+    location: '~25 m envelope · ~30 m total · fully fueled · ~200 kg',
+    materials: { nylon: 0.07, wood: 0.05, aluminum: 0.007, steel: 0.006, fuel: 0.15 },
+    build: buildHotAirBalloon,
+  },
+  sedan: {
+    category: 'Vehicles & Craft',
+    name: 'Mid-size Sedan',
+    location: 'Generic · ~4.7 m · fully fueled · ~1,500 kg',
+    materials: { steel: 0.115, plastic: 0.135, aluminum: 0.030, rubber: 0.055, glass: 0.016, copper: 0.003, fuel: 0.060 },
+    build: buildSedan,
+  },
+
+  // ---- Buildings & Monuments ----
+  burj: {
+    category: 'Buildings & Monuments',
+    name: 'Burj Khalifa',
+    location: 'Dubai · 2010 · 828 m',
+    materials: { concrete: 170000, steel: 7000, glass: 1500, aluminum: 110 },
+    build: buildBurjKhalifa,
+  },
+  eiffel: {
+    category: 'Buildings & Monuments',
+    name: 'Eiffel Tower',
+    location: 'Paris · 1889 · 330 m',
+    materials: { iron: 936, concrete: 1300, paint: 50 },
+    build: buildEiffelTower,
+  },
+  empire: {
+    category: 'Buildings & Monuments',
+    name: 'Empire State Building',
+    location: 'New York · 1931 · 443 m',
+    materials: { steel: 11500, concrete: 80000, limestone: 25000, brick: 8000, glass: 80, aluminum: 30 },
+    build: buildEmpireStateBuilding,
+  },
+  arch: {
+    category: 'Buildings & Monuments',
+    name: 'Gateway Arch',
+    location: 'St. Louis · 1965 · 192 m',
+    materials: { steel: 266, concrete: 16000 },
+    build: buildStLouisArch,
+  },
+  notredame: {
+    category: 'Buildings & Monuments',
+    name: 'Notre-Dame Cathedral',
+    location: 'Paris · 1163–1345 · 90 m to spire',
+    materials: { limestone: 25000, lead: 18, wood: 1000, glass: 40 },
+    build: buildNotreDame,
+  },
+  liberty: {
+    category: 'Buildings & Monuments',
+    name: 'Statue of Liberty',
+    location: 'New York · 1886 · 93 m with pedestal',
+    materials: { copper: 8.5, iron: 0.6, steel: 16, granite: 5000, concrete: 88000 },
+    build: buildStatueOfLiberty,
+  },
+  washington: {
+    category: 'Buildings & Monuments',
+    name: 'Washington Monument',
+    location: 'Washington, D.C. · 1888 · 169 m',
+    materials: { marble: 18000, granite: 6000, sandstone: 3000, iron: 30 },
+    build: buildWashingtonMonument,
+  },
+
+  // ---- Living Things ----
+  elephant: {
+    category: 'Living Things',
+    name: 'African Elephant',
+    location: 'Loxodonta africana · ~2.5 m tall · ~5,000 kg',
+    materials: { water: 3.25, fat: 0.65, protein: 0.55, bone: 0.13 },
+    build: buildElephant,
+  },
+  whale: {
+    category: 'Living Things',
+    name: 'Blue Whale',
+    location: 'Balaenoptera musculus · ~25 m · ~150 t',
+    materials: { water: 100, fat: 32, protein: 14, bone: 3 },
+    build: buildBlueWhale,
+  },
+  redwood: {
+    category: 'Living Things',
+    name: 'Coast Redwood',
+    location: 'Sequoia sempervirens · ~80 m · 5 m base',
+    materials: { wood: 300, water: 280, bark: 20 },
+    build: buildRedwood,
+  },
+  dog: {
+    category: 'Living Things',
+    name: 'Dog',
+    location: 'Medium breed · ~25 kg · ~0.6 m tall',
+    materials: { water: 0.0163, fat: 0.005, protein: 0.0033, bone: 0.0013 },
+    build: buildDog,
+  },
+  human: {
+    category: 'Living Things',
+    name: 'Human',
+    location: 'Adult · ~1.75 m · ~70 kg',
+    materials: { water: 0.042, fat: 0.015, protein: 0.009, bone: 0.0033 },
+    build: buildHuman,
+  },
+
+  // ---- Household ----
+  cardbox: {
+    category: 'Household',
+    name: 'Cardboard Box',
+    location: 'Medium moving box · 46 × 46 × 41 cm · ~1.8 kg',
+    materials: { cardboard: 0.0072 },
+    build: buildCardboardBox,
+  },
+  laptop: {
+    category: 'Household',
+    name: 'Laptop Computer',
+    location: '14-inch · ~32 × 22 × 1.8 cm · ~1.5 kg',
+    materials: {
+      aluminum: 0.00022,
+      plastic: 0.00018,
+      glass: 0.00006,
+      copper: 0.00003,
+      steel: 0.00001,
+      composite: 0.00010,
+    },
+    build: buildLaptop,
+  },
+  milkjug: {
+    category: 'Household',
+    name: 'Milk Jug',
+    location: 'US gallon · 3.78 L · ~65 g empty',
+    materials: { plastic: 0.00007 },
+    build: buildMilkJug,
+  },
+  fridge: {
+    category: 'Household',
+    name: 'Refrigerator',
+    location: 'Generic · ~1.8 m · ~70 kg',
+    materials: { insulation: 0.20, plastic: 0.025, steel: 0.0045, glass: 0.002, aluminum: 0.00074, copper: 0.00033 },
+    build: buildFridge,
+  },
+  shoe: {
+    category: 'Household',
+    name: 'Shoe',
+    location: 'Athletic sneaker · ~30 cm · ~300 g',
+    materials: { rubber: 0.00007, plastic: 0.00012, nylon: 0.00006 },
+    build: buildShoe,
+  },
+  soccer: {
+    category: 'Household',
+    name: 'Soccer Ball',
+    location: 'FIFA size 5 · 22 cm diameter · ~430 g',
+    materials: {
+      plastic: 0.00030,
+      rubber:  0.00004,
+      nylon:   0.00003,
+    },
+    build: buildSoccerBall,
+  },
+  sodacan: {
+    category: 'Household',
+    name: 'Soda Can',
+    location: '12 oz · 6.6 cm × 12.2 cm · ~14 g (empty)',
+    materials: { aluminum: 0.0000052, paint: 0.0000002 },
+    build: buildSodaCan,
+  },
+};
+
+/* ===========================================================
+   THREE setup — single canvas, two viewports
+   =========================================================== */
+const canvas = document.getElementById('render-canvas');
+const renderer = new THREE.WebGLRenderer({ canvas, antialias: true, alpha: false });
+renderer.setPixelRatio(Math.min(window.devicePixelRatio, 2));
+renderer.setClearColor(0x0a0a0c, 1);
+renderer.autoClear = false;
+
+let contextHealthy = true;
+let currentKey = null;
+
+canvas.addEventListener('webglcontextlost', (ev) => {
+  ev.preventDefault();
+  contextHealthy = false;
+  showBanner('Rendering paused — restoring…');
+});
+canvas.addEventListener('webglcontextrestored', () => {
+  contextHealthy = true;
+  if (currentKey) loadObject(currentKey);
+  hideBanner();
+});
+
+function makeView(overlayId) {
+  const scene = new THREE.Scene();
+  const camera = new THREE.PerspectiveCamera(38, 1, 0.01, 60000);
+  const hemi = new THREE.HemisphereLight(0xfff5e0, 0x202028, 0.6);
+  scene.add(hemi);
+  const key = new THREE.DirectionalLight(0xfff1d8, 1.0);
+  key.position.set(1, 1.2, 0.8);
+  scene.add(key);
+  const fill = new THREE.DirectionalLight(0x9ec0e0, 0.35);
+  fill.position.set(-0.8, 0.4, -0.6);
+  scene.add(fill);
+  const rim = new THREE.DirectionalLight(0xffe0a0, 0.28);
+  rim.position.set(0.2, 0.6, -1);
+  scene.add(rim);
+  const ground = new THREE.Mesh(
+    new THREE.CircleGeometry(20000, 64),
+    new THREE.MeshStandardMaterial({ color: 0x16161a, roughness: 1, metalness: 0 })
+  );
+  ground.rotation.x = -Math.PI/2;
+  ground.position.y = -0.001;
+  scene.add(ground);
+
+  const gridGroup = new THREE.Group();
+  scene.add(gridGroup);
+
+  const overlay = document.getElementById(overlayId);
+  const controls = new OrbitControls(camera, overlay);
+  controls.enableDamping = true;
+  controls.dampingFactor = 0.08;
+  controls.screenSpacePanning = true;
+  controls.minDistance = 0.05;
+  controls.maxDistance = 30000;
+  controls.target.set(0, 0, 0);
+
+  return { scene, camera, controls, overlay, gridGroup, content: null, dimGroup: new THREE.Group() };
+}
+
+const formView = makeView('overlay-form');
+const compView = makeView('overlay-comp');
+formView.scene.add(formView.dimGroup);
+compView.scene.add(compView.dimGroup);
+
+/* ---------- Lock sync ---------- */
+let locked = true;
+let syncing = false;
+function copyCamera(src, dst) {
+  syncing = true;
+  dst.camera.position.copy(src.camera.position);
+  dst.camera.quaternion.copy(src.camera.quaternion);
+  dst.camera.zoom = src.camera.zoom;
+  dst.camera.updateProjectionMatrix();
+  dst.controls.target.copy(src.controls.target);
+  dst.controls.update();
+  syncing = false;
+}
+formView.controls.addEventListener('change', () => { if (locked && !syncing) copyCamera(formView, compView); });
+compView.controls.addEventListener('change', () => { if (locked && !syncing) copyCamera(compView, formView); });
+
+/* ---------- Resize ---------- */
+function resize() {
+  const stage = document.getElementById('stage');
+  const w = stage.clientWidth;
+  const h = stage.clientHeight;
+  renderer.setSize(w, h, false);
+}
+new ResizeObserver(resize).observe(document.getElementById('stage'));
+window.addEventListener('resize', resize);
+
+/* ===========================================================
+   Cube stack
+   =========================================================== */
+function buildCubeStack(materials) {
+  const g = new THREE.Group();
+  const entries = Object.entries(materials).filter(([_,v]) => v > 0).sort((a,b) => b[1] - a[1]);
+  const anchors = [];
+  let yCursor = 0;
+  for (const [key, vol] of entries) {
+    const m = MATERIALS[key]; if (!m) continue;
+    const side = Math.cbrt(vol);
+    const mat = makeMat(key, { roughness: 0.55 });
+    const mesh = new THREE.Mesh(new THREE.BoxGeometry(side, side, side), mat);
+    mesh.position.y = yCursor + side/2;
+    g.add(mesh);
+    const eg = new THREE.EdgesGeometry(mesh.geometry);
+    const lm = new THREE.LineBasicMaterial({ color: 0x000000, transparent: true, opacity: 0.35 });
+    const lines = new THREE.LineSegments(eg, lm);
+    lines.position.copy(mesh.position);
+    g.add(lines);
+    anchors.push({ key, vol, side, position: mesh.position.clone() });
+    yCursor += side;
+  }
+  return { group: g, anchors };
+}
+
+/* ===========================================================
+   Dimension lines (form view)
+   =========================================================== */
+function buildDimensionLines(group) {
+  const out = new THREE.Group();
+  const bb = new THREE.Box3().setFromObject(group);
+  const size = bb.getSize(new THREE.Vector3());
+  const max = Math.max(size.x, size.y, size.z);
+  const off = max * 0.08;
+
+  const matLine = new THREE.LineBasicMaterial({ color: 0xd8b85a, transparent: true, opacity: 0.7 });
+  const matTick = new THREE.LineBasicMaterial({ color: 0xd8b85a, transparent: true, opacity: 0.6 });
+  const tickLen = max * 0.015;
+
+  function dimLine(p0, p1, axis) {
+    const geo = new THREE.BufferGeometry().setFromPoints([p0, p1]);
+    const line = new THREE.Line(geo, matLine);
+    out.add(line);
+    let perp;
+    if (axis === 'x') perp = new THREE.Vector3(0, tickLen, 0);
+    if (axis === 'y') perp = new THREE.Vector3(tickLen, 0, 0);
+    if (axis === 'z') perp = new THREE.Vector3(0, tickLen, 0);
+    for (const p of [p0, p1]) {
+      const tg = new THREE.BufferGeometry().setFromPoints([
+        p.clone().sub(perp), p.clone().add(perp)
+      ]);
+      out.add(new THREE.Line(tg, matTick));
+    }
+    out.userData.dims = out.userData.dims || [];
+    out.userData.dims.push({
+      axis,
+      p0: p0.clone(),
+      p1: p1.clone(),
+      mid: p0.clone().add(p1).multiplyScalar(0.5),
+      value: p0.distanceTo(p1),
+    });
+  }
+
+  dimLine(
+    new THREE.Vector3(bb.min.x, bb.min.y + off, bb.max.z + off),
+    new THREE.Vector3(bb.max.x, bb.min.y + off, bb.max.z + off),
+    'x'
+  );
+  dimLine(
+    new THREE.Vector3(bb.max.x + off, bb.min.y, bb.max.z + off),
+    new THREE.Vector3(bb.max.x + off, bb.max.y, bb.max.z + off),
+    'y'
+  );
+  dimLine(
+    new THREE.Vector3(bb.max.x + off, bb.min.y + off, bb.min.z),
+    new THREE.Vector3(bb.max.x + off, bb.min.y + off, bb.max.z),
+    'z'
+  );
+
+  return out;
+}
+
+/* ===========================================================
+   Auto-frame both cameras
+   =========================================================== */
+function bbox(group) {
+  const b = new THREE.Box3().setFromObject(group);
+  if (!isFinite(b.min.x)) b.set(new THREE.Vector3(-1,-1,-1), new THREE.Vector3(1,1,1));
+  return b;
+}
+
+function frameViews() {
+  // Compute bboxes that include the dim group, so dimension lines stay framed too.
+  const fb = new THREE.Box3();
+  if (formView.content) fb.expandByObject(formView.content);
+  if (formView.dimGroup && formView.dimGroup.children.length) fb.expandByObject(formView.dimGroup);
+  if (!isFinite(fb.min.x)) fb.set(new THREE.Vector3(-1,-1,-1), new THREE.Vector3(1,1,1));
+
+  const cb = new THREE.Box3();
+  if (compView.content) cb.expandByObject(compView.content);
+  if (compView.dimGroup && compView.dimGroup.children.length) cb.expandByObject(compView.dimGroup);
+  if (!isFinite(cb.min.x)) cb.set(new THREE.Vector3(-1,-1,-1), new THREE.Vector3(1,1,1));
+
+  const fs = fb.getSize(new THREE.Vector3());
+  const cs = cb.getSize(new THREE.Vector3());
+  const maxDim = Math.max(fs.x, fs.y, fs.z, cs.x, cs.y, cs.z) * 1.18;
+
+  const stage = document.getElementById('stage');
+  const halfW = stage.clientWidth / 2;
+  const h = stage.clientHeight;
+  const vpAspect = halfW / Math.max(1, h);
+  const fov = formView.camera.fov * Math.PI / 180;
+  const fitH = maxDim / (2 * Math.tan(fov/2));
+  const fitW = fitH / vpAspect;
+  const dist = Math.max(fitH, fitW) * 1.20;
+
+  // Suppress the 'change' event copyCamera while we set up both views.
+  // Without this, comp's controls.update() at the end of its iteration would
+  // fire 'change' and call copyCamera(comp -> form), overwriting form's
+  // carefully chosen target with comp's (which is based on the much smaller
+  // cube-stack bbox). The explicit copyCamera at the end of this function
+  // handles form->comp sync correctly.
+  syncing = true;
+
+  // For tall objects, raise the camera target so the world origin (and the
+  // top of the bbox) shift down in the viewport. The shift scales with the
+  // object's height-to-width aspect ratio: squat objects are unaffected,
+  // very tall ones (Eiffel, Burj, Saturn V, etc.) get the camera aimed up
+  // near the upper third of the bbox, leaving comfortable space above.
+  for (const v of [formView, compView]) {
+    const bb = (v === formView) ? fb : cb;
+    const sz = (v === formView) ? fs : cs;
+    const center = bb.getCenter(new THREE.Vector3());
+    const aspect = sz.y / Math.max(sz.x, sz.z, 0.001);
+    const shiftFrac = Math.min(0.15, Math.max(0, (aspect - 1) * 0.30));
+    const targetY = center.y + sz.y * shiftFrac;
+
+    v.controls.target.set(0, targetY, 0);
+    v.camera.position.set(dist*0.65, targetY + dist*0.45, dist*0.85);
+    v.camera.near = Math.max(0.001, dist/5000);
+    v.camera.far = dist*30;
+    v.camera.updateProjectionMatrix();
+    v.controls.update();
+  }
+
+  syncing = false;
+  if (locked) copyCamera(formView, compView);
+}
+
+/* ===========================================================
+   Floor grid
+   =========================================================== */
+function buildGrid(size) {
+  const g = new THREE.Group();
+  const step = Math.pow(10, Math.floor(Math.log10(Math.max(0.001, size/8))));
+  const cells = Math.max(10, Math.ceil(size / step));
+  const total = cells * step;
+  const grid = new THREE.GridHelper(total*2, cells*2, 0x2c2c34, 0x1a1a20);
+  grid.material.transparent = true;
+  grid.material.opacity = 0.5;
+  g.add(grid);
+  return g;
+}
+
+/* ===========================================================
+   Scene loader
+   =========================================================== */
+let compAnchors = [];
+
+function disposeGroup(g) {
+  g.traverse(o => {
+    if (o.geometry) o.geometry.dispose();
+    if (o.material) {
+      if (Array.isArray(o.material)) o.material.forEach(m => m.dispose());
+      else o.material.dispose();
+    }
+  });
+}
+
+function loadObject(key) {
+  const obj = OBJECTS[key]; if (!obj) return;
+  currentKey = key;
+
+  for (const v of [formView, compView]) {
+    if (v.content) { v.scene.remove(v.content); disposeGroup(v.content); v.content = null; }
+    disposeGroup(v.gridGroup); v.gridGroup.clear();
+  }
+  formView.scene.remove(formView.dimGroup);
+  disposeGroup(formView.dimGroup);
+  formView.dimGroup = new THREE.Group();
+  formView.dimGroup.visible = measurementsOn;
+  formView.scene.add(formView.dimGroup);
+
+  compView.scene.remove(compView.dimGroup);
+  disposeGroup(compView.dimGroup);
+  compView.dimGroup = new THREE.Group();
+  compView.dimGroup.visible = measurementsOn;
+  compView.scene.add(compView.dimGroup);
+
+  const formGroup = obj.build();
+  formView.scene.add(formGroup);
+  formView.content = formGroup;
+
+  const dimLines = buildDimensionLines(formGroup);
+  formView.dimGroup.add(dimLines);
+
+  const stack = buildCubeStack(obj.materials);
+  compView.scene.add(stack.group);
+  compView.content = stack.group;
+  compAnchors = stack.anchors;
+
+  // (Composition view does not get dimension lines — the cube stack's
+  // dimensions are arbitrary visual encodings, not informative measurements.)
+
+  const fb = bbox(formGroup);
+  const sz = Math.max(
+    fb.getSize(new THREE.Vector3()).length(),
+    bbox(stack.group).getSize(new THREE.Vector3()).length()
+  );
+  formView.gridGroup.add(buildGrid(sz));
+  compView.gridGroup.add(buildGrid(sz));
+
+  frameViews();
+  updateFooter(obj, fb);
+  updateLabelsLayout();
+}
+
+/* ===========================================================
+   UI bindings
+   =========================================================== */
+const select = document.getElementById('object-select');
+{
+  const groups = new Map();
+  for (const [k, o] of Object.entries(OBJECTS)) {
+    const cat = o.category || 'Other';
+    if (!groups.has(cat)) groups.set(cat, []);
+    groups.get(cat).push([k, o]);
+  }
+  for (const [cat, items] of groups) {
+    const og = document.createElement('optgroup');
+    og.label = cat;
+    for (const [k, o] of items) {
+      const opt = document.createElement('option');
+      opt.value = k;
+      opt.textContent = o.name;
+      og.appendChild(opt);
+    }
+    select.appendChild(og);
+  }
+}
+select.addEventListener('change', e => loadObject(e.target.value));
+
+const lockBtn = document.getElementById('lock-btn');
+const lockLabel = document.getElementById('lock-label');
+function setLock(on) {
+  locked = on;
+  lockBtn.setAttribute('aria-pressed', on ? 'true' : 'false');
+  lockLabel.textContent = on ? 'Locked' : 'Independent';
+  if (on) copyCamera(formView, compView);
+}
+lockBtn.addEventListener('click', () => setLock(!locked));
+
+document.getElementById('reset-btn').addEventListener('click', () => frameViews());
+
+let units = 'metric';
+let measurementsOn = true;
+
+const measureBtn = document.getElementById('measure-btn');
+const measureLabel = document.getElementById('measure-label');
+function setMeasurements(on) {
+  measurementsOn = on;
+  measureBtn.setAttribute('aria-pressed', on ? 'true' : 'false');
+  measureLabel.textContent = on ? 'On' : 'Off';
+  formView.dimGroup.visible = on;
+  compView.dimGroup.visible = on;
+}
+measureBtn.addEventListener('click', () => setMeasurements(!measurementsOn));
+const unitsSeg = document.getElementById('units-seg');
+unitsSeg.addEventListener('click', e => {
+  const b = e.target.closest('button'); if (!b) return;
+  units = b.dataset.units;
+  for (const c of unitsSeg.querySelectorAll('button')) c.classList.toggle('active', c === b);
+  if (currentKey) {
+    const obj = OBJECTS[currentKey];
+    updateFooter(obj, bbox(formView.content));
+    updateLabelsLayout();
+  }
+});
+
+for (const panEl of document.querySelectorAll('.vp-pan')) {
+  const tgt = panEl.dataset.target;
+  panEl.addEventListener('click', e => {
+    const b = e.target.closest('button'); if (!b) return;
+    e.stopPropagation();
+    const dir = b.dataset.pan === 'up' ? 1 : -1;
+    const v = (tgt === 'form') ? formView : compView;
+    const others = locked ? [formView, compView] : [v];
+    for (const view of others) {
+      const dist = view.camera.position.distanceTo(view.controls.target);
+      const amount = dist * 0.10 * dir;
+      view.camera.position.y += amount;
+      view.controls.target.y += amount;
+      view.controls.update();
+    }
+  });
+}
+
+/* ===========================================================
+   Footer + measurement formatting
+   =========================================================== */
+const M3_TO_FT3 = 35.3146667;
+function fmtVol(v) {
+  if (units === 'imperial') v = v * M3_TO_FT3;
+  const unit = units === 'imperial' ? 'ft³' : 'm³';
+  let s;
+  if (v >= 1000)         s = v.toLocaleString(undefined, { maximumFractionDigits: 0 });
+  else if (v >= 10)      s = v.toFixed(1);
+  else if (v >= 1)       s = v.toFixed(2);
+  else if (v >= 0.01)    s = v.toFixed(3);
+  else if (v >= 0.0001)  s = v.toFixed(5);
+  else if (v >= 0.000001) s = v.toFixed(7);
+  else                   s = v.toFixed(9);
+  return { num: s, unit };
+}
+function fmtLen(v) {
+  if (units === 'imperial') return (v * 3.28084).toFixed(1) + ' ft';
+  if (v >= 100) return v.toFixed(0) + ' m';
+  if (v >= 10)  return v.toFixed(1) + ' m';
+  return v.toFixed(2) + ' m';
+}
+
+function updateFooter(obj, fb) {
+  document.getElementById('obj-name').textContent = obj.name;
+  document.getElementById('obj-loc').textContent = obj.location;
+}
+
+/* ===========================================================
+   Floating labels (composition) + dimension labels (form)
+   =========================================================== */
+const compFloats = document.getElementById('comp-floats');
+const compSvg = document.getElementById('comp-svg');
+const formFloats = document.getElementById('form-floats');
+const formSvg = document.getElementById('form-svg');
+
+const labelEls = [];
+const lineEls = [];
+let compTotalLabelEl = null;
+
+function rebuildCompLabelDOM() {
+  if (!currentKey) return;
+  const obj = OBJECTS[currentKey];
+  const total = Object.values(obj.materials).reduce((a,b)=>a+b, 0);
+
+  compFloats.innerHTML = '';
+  compSvg.innerHTML = '';
+  labelEls.length = 0; lineEls.length = 0;
+  compTotalLabelEl = null;
+
+  for (const a of compAnchors) {
+    const m = MATERIALS[a.key];
+    const pct = a.vol / total * 100;
+    const pctStr = pct >= 1 ? pct.toFixed(1) + '%' : pct.toFixed(2) + '%';
+    const v = fmtVol(a.vol);
+    const div = document.createElement('div');
+    div.className = 'float-label';
+    div.innerHTML = `
+      <div class="head">
+        <span class="dot" style="background:${m.color}"></span>
+        <span class="name">${m.name}</span>
+        <span class="pct">${pctStr}</span>
+      </div>
+      <div class="vol">${v.num}<span class="unit">${v.unit}</span></div>
+    `;
+    compFloats.appendChild(div);
+    labelEls.push({ div, anchor: a });
+
+    const line = document.createElementNS('http://www.w3.org/2000/svg', 'path');
+    line.setAttribute('stroke', '#d8b85a');
+    line.setAttribute('stroke-width', '1');
+    line.setAttribute('fill', 'none');
+    line.setAttribute('opacity', '0.55');
+    compSvg.appendChild(line);
+    lineEls.push(line);
+  }
+
+  // Total volume label — same visual format as material labels, but no
+  // leader line and a gold accent dot rather than a material color.
+  const tv = fmtVol(total);
+  const totalDiv = document.createElement('div');
+  totalDiv.className = 'float-label';
+  totalDiv.innerHTML = `
+    <div class="head">
+      <span class="dot" style="background:var(--accent)"></span>
+      <span class="name">Total Material Volume</span>
+    </div>
+    <div class="vol">${tv.num}<span class="unit">${tv.unit}</span></div>
+  `;
+  compFloats.appendChild(totalDiv);
+  compTotalLabelEl = totalDiv;
+}
+
+const formDimLabels = [];
+const compDimLabels = [];
+const compDimFloats = document.getElementById('comp-dim-floats');
+
+function rebuildDimLabelDOM(view, container, arr) {
+  container.innerHTML = '';
+  arr.length = 0;
+  const dimGroupChild = view.dimGroup.children[0];
+  if (!dimGroupChild) return;
+  const dims = dimGroupChild.userData.dims || [];
+  for (const d of dims) {
+    const div = document.createElement('div');
+    div.className = 'dim-label';
+    div.innerHTML = `<span class="axis">${d.axis.toUpperCase()}</span><span class="val"></span>`;
+    container.appendChild(div);
+    arr.push({ div, dim: d });
+  }
+}
+
+function rebuildFormDimLabelDOM() {
+  rebuildDimLabelDOM(formView, formFloats, formDimLabels);
+  updateDimLabelText();
+}
+function rebuildCompDimLabelDOM() {
+  rebuildDimLabelDOM(compView, compDimFloats, compDimLabels);
+  updateDimLabelText();
+}
+function updateDimLabelText() {
+  for (const { div, dim } of formDimLabels) {
+    div.querySelector('.val').textContent = fmtLen(dim.value);
+  }
+  for (const { div, dim } of compDimLabels) {
+    div.querySelector('.val').textContent = fmtLen(dim.value);
+  }
+}
+
+function updateLabelsLayout() {
+  rebuildCompLabelDOM();
+  rebuildFormDimLabelDOM();
+  rebuildCompDimLabelDOM();
+  rebuildFormVolumeDOM();
+}
+
+/* ===========================================================
+   Form-view encapsulated volume label
+   =========================================================== */
+const formVolumeFloats = document.getElementById('form-volume-floats');
+let formVolumeLabel = null;
+let formVolumeLine = null;
+
+function rebuildFormVolumeDOM() {
+  formVolumeFloats.innerHTML = '';
+  if (formVolumeLine && formVolumeLine.parentNode) {
+    formVolumeLine.parentNode.removeChild(formVolumeLine);
+  }
+  formVolumeLabel = null;
+  formVolumeLine = null;
+  if (!currentKey || !formView.content) return;
+
+  const volume = computeMeshVolume(formView.content);
+  const v = fmtVol(volume);
+
+  const bb = new THREE.Box3().setFromObject(formView.content);
+  const div = document.createElement('div');
+  div.className = 'float-label';
+  div.innerHTML = `
+    <div class="head">
+      <span class="dot" style="background:var(--accent)"></span>
+      <span class="name">Enclosed Volume</span>
+    </div>
+    <div class="vol">${v.num}<span class="unit">${v.unit}</span></div>
+  `;
+  formVolumeFloats.appendChild(div);
+  // Anchor the leader line at the centroid of the mesh's actual vertices
+  // (not the bbox center). For shapes like the Gateway Arch where the
+  // bbox center sits in empty space between the legs, the vertex centroid
+  // lands on the actual structure instead.
+  const anchor = new THREE.Vector3();
+  let vertexCount = 0;
+  const tmpV = new THREE.Vector3();
+  formView.content.updateMatrixWorld(true);
+  formView.content.traverse(obj => {
+    if (!obj.isMesh || !obj.geometry) return;
+    const pos = obj.geometry.attributes && obj.geometry.attributes.position;
+    if (!pos) return;
+    // Subsample to keep this fast for high-poly meshes (e.g. the soccer ball)
+    const step = Math.max(1, Math.floor(pos.count / 200));
+    for (let i = 0; i < pos.count; i += step) {
+      tmpV.fromBufferAttribute(pos, i).applyMatrix4(obj.matrixWorld);
+      anchor.add(tmpV);
+      vertexCount++;
+    }
+  });
+  if (vertexCount > 0) anchor.divideScalar(vertexCount);
+  else anchor.copy(bb.getCenter(new THREE.Vector3()));
+  formVolumeLabel = { div, position: anchor };
+
+  const line = document.createElementNS('http://www.w3.org/2000/svg', 'path');
+  line.setAttribute('stroke', '#d8b85a');
+  line.setAttribute('stroke-width', '1');
+  line.setAttribute('fill', 'none');
+  line.setAttribute('opacity', '0.55');
+  formSvg.appendChild(line);
+  formVolumeLine = line;
+}
+
+// Sum the signed volumes of every triangle in the group, using the
+// divergence-theorem identity: V = (1/6) Σ (v0 · (v1 × v2)) over all
+// triangles. For a closed, correctly-oriented mesh this gives the volume
+// enclosed by the surface. Lines and points contribute nothing.
+//
+// Caveats: parts that overlap (e.g. crossing struts in the Eiffel Tower)
+// have their overlapping volume counted multiple times. The result is the
+// summed solid volume of all individual parts, not the volume of the union.
+function computeMeshVolume(group) {
+  let total = 0;
+  const v0 = new THREE.Vector3(), v1 = new THREE.Vector3(), v2 = new THREE.Vector3();
+  const cross = new THREE.Vector3();
+  group.updateMatrixWorld(true);
+  group.traverse(obj => {
+    if (!obj.isMesh || !obj.geometry) return;
+    const geo = obj.geometry;
+    const pos = geo.attributes && geo.attributes.position;
+    if (!pos) return;
+    const idx = geo.index;
+    const m = obj.matrixWorld;
+    const triCount = idx ? idx.count / 3 : pos.count / 3;
+    for (let t = 0; t < triCount; t++) {
+      let a, b, c;
+      if (idx) { a = idx.getX(t*3); b = idx.getX(t*3+1); c = idx.getX(t*3+2); }
+      else     { a = t*3;            b = t*3+1;          c = t*3+2; }
+      v0.fromBufferAttribute(pos, a).applyMatrix4(m);
+      v1.fromBufferAttribute(pos, b).applyMatrix4(m);
+      v2.fromBufferAttribute(pos, c).applyMatrix4(m);
+      cross.crossVectors(v1, v2);
+      total += v0.dot(cross);
+    }
+  });
+  return Math.abs(total) / 6;
+}
+
+function updateFormVolumeLabel() {
+  if (!formVolumeLabel || !formVolumeLine) return;
+  const stage = document.getElementById('stage');
+  const halfW = stage.clientWidth / 2;
+  const h = stage.clientHeight;
+
+  // Position label on the left side of the form viewport, vertically centered.
+  const labelX = 16;
+  const labelY = h / 2;
+  formVolumeLabel.div.style.left = labelX + 'px';
+  formVolumeLabel.div.style.top = labelY + 'px';
+
+  // Project the bbox center to screen for the leader-line origin.
+  projVec.copy(formVolumeLabel.position).project(formView.camera);
+  const sx = (projVec.x * 0.5 + 0.5) * halfW;
+  const sy = (-projVec.y * 0.5 + 0.5) * h;
+
+  // Leader: from the projected object center, curving to the label's right edge.
+  const labelW = formVolumeLabel.div.offsetWidth;
+  const tx = labelX + labelW + 4;
+  const ty = labelY;
+  const cx = (sx + tx) / 2;
+  const cy = sy;
+  const pathStr = `M ${sx.toFixed(1)} ${sy.toFixed(1)} Q ${cx.toFixed(1)} ${cy.toFixed(1)} ${tx.toFixed(1)} ${ty.toFixed(1)}`;
+  formVolumeLine.setAttribute('d', pathStr);
+}
+
+const projVec = new THREE.Vector3();
+
+function updateCompLabelsFrame() {
+  const stage = document.getElementById('stage');
+  const halfW = stage.clientWidth / 2;
+  const h = stage.clientHeight;
+  if (!labelEls.length) return;
+
+  const colX = halfW * 0.62;
+  const labelGap = 4;
+  let needed = 0;
+  for (const { div } of labelEls) needed += div.offsetHeight + labelGap;
+  let yCursor = Math.max(80, (h - needed) / 2);
+
+  // labels go top-to-bottom matching cube order top-to-bottom
+  // anchors are largest-first → top of stack is last anchor → reverse
+  const ordered = [...labelEls].reverse();
+  compSvg.setAttribute('width', halfW);
+  compSvg.setAttribute('height', h);
+
+  for (let i = 0; i < ordered.length; i++) {
+    const { div, anchor } = ordered[i];
+    const labelH = div.offsetHeight;
+    const labelY = yCursor + labelH/2;
+    div.style.left = colX + 'px';
+    div.style.top = labelY + 'px';
+    yCursor += labelH + labelGap;
+
+    projVec.copy(anchor.position).project(compView.camera);
+    const sx = (projVec.x * 0.5 + 0.5) * halfW;
+    const sy = (-projVec.y * 0.5 + 0.5) * h;
+
+    const tx = colX - 4;
+    const ty = labelY;
+    const cx = (sx + tx) / 2;
+    const cy = sy;
+    const pathStr = `M ${sx.toFixed(1)} ${sy.toFixed(1)} Q ${cx.toFixed(1)} ${cy.toFixed(1)} ${tx.toFixed(1)} ${ty.toFixed(1)}`;
+    const lineIdx = labelEls.indexOf(ordered[i]);
+    lineEls[lineIdx].setAttribute('d', pathStr);
+  }
+
+  // Total label: directly below the last material label, no leader line.
+  if (compTotalLabelEl) {
+    const totalH = compTotalLabelEl.offsetHeight;
+    const totalY = yCursor + 8 + totalH / 2;
+    compTotalLabelEl.style.left = colX + 'px';
+    compTotalLabelEl.style.top = totalY + 'px';
+  }
+}
+
+// Y label hovers at the top (max endpoint); X and Z labels at their min
+// endpoints (the original positions). Offset past the end tick along the
+// axis so the label hovers cleanly out at the extreme.
+function dimLabelAnchor(dim, bb) {
+  const useMax = (dim.axis === 'y');
+  const v0 = dim.axis === 'x' ? dim.p0.x : dim.axis === 'y' ? dim.p0.y : dim.p0.z;
+  const v1 = dim.axis === 'x' ? dim.p1.x : dim.axis === 'y' ? dim.p1.y : dim.p1.z;
+  let end;
+  if (useMax) end = v0 >= v1 ? dim.p0 : dim.p1;
+  else        end = v0 <= v1 ? dim.p0 : dim.p1;
+
+  const sz = bb.getSize(new THREE.Vector3());
+  const offMag = Math.max(sz.x, sz.y, sz.z) * 0.04 * (useMax ? 1 : -1);
+  const offset = new THREE.Vector3();
+  if (dim.axis === 'x') offset.x = offMag;
+  else if (dim.axis === 'y') offset.y = offMag;
+  else if (dim.axis === 'z') offset.z = offMag;
+  return end.clone().add(offset);
+}
+
+function updateFormDimLabels() {
+  const stage = document.getElementById('stage');
+  const halfW = stage.clientWidth / 2;
+  const h = stage.clientHeight;
+  formSvg.setAttribute('width', halfW);
+  formSvg.setAttribute('height', h);
+
+  const bb = new THREE.Box3();
+  if (formView.content) bb.expandByObject(formView.content);
+
+  for (const { div, dim } of formDimLabels) {
+    if (!measurementsOn) { div.style.display = 'none'; continue; }
+    const anchor = dimLabelAnchor(dim, bb);
+    projVec.copy(anchor).project(formView.camera);
+    const sx = (projVec.x * 0.5 + 0.5) * halfW;
+    const sy = (-projVec.y * 0.5 + 0.5) * h;
+    if (projVec.z > 1) { div.style.display = 'none'; continue; }
+    div.style.display = 'block';
+    div.style.left = sx + 'px';
+    div.style.top = sy + 'px';
+  }
+}
+
+function updateCompDimLabels() {
+  const stage = document.getElementById('stage');
+  const halfW = stage.clientWidth / 2;
+  const h = stage.clientHeight;
+
+  const bb = new THREE.Box3();
+  if (compView.content) bb.expandByObject(compView.content);
+
+  for (const { div, dim } of compDimLabels) {
+    if (!measurementsOn) { div.style.display = 'none'; continue; }
+    const anchor = dimLabelAnchor(dim, bb);
+    projVec.copy(anchor).project(compView.camera);
+    const sx = (projVec.x * 0.5 + 0.5) * halfW;
+    const sy = (-projVec.y * 0.5 + 0.5) * h;
+    if (projVec.z > 1) { div.style.display = 'none'; continue; }
+    div.style.display = 'block';
+    div.style.left = sx + 'px';
+    div.style.top = sy + 'px';
+  }
+}
+
+/* ===========================================================
+   Render loop with split viewport
+   =========================================================== */
+let running = true;
+document.addEventListener('visibilitychange', () => {
+  running = !document.hidden;
+  if (running) requestAnimationFrame(loop);
+});
+
+function loop() {
+  if (!running) return;
+  try {
+    formView.controls.update();
+    compView.controls.update();
+    if (contextHealthy) {
+      const stage = document.getElementById('stage');
+      const w = stage.clientWidth;
+      const h = stage.clientHeight;
+      const halfW = Math.floor(w * 0.5);
+
+      renderer.setScissorTest(true);
+
+      renderer.setViewport(0, 0, halfW, h);
+      renderer.setScissor(0, 0, halfW, h);
+      formView.camera.aspect = halfW / Math.max(1, h);
+      formView.camera.updateProjectionMatrix();
+      renderer.clear();
+      renderer.render(formView.scene, formView.camera);
+
+      renderer.setViewport(halfW, 0, w - halfW, h);
+      renderer.setScissor(halfW, 0, w - halfW, h);
+      compView.camera.aspect = (w - halfW) / Math.max(1, h);
+      compView.camera.updateProjectionMatrix();
+      renderer.clear();
+      renderer.render(compView.scene, compView.camera);
+
+      renderer.setScissorTest(false);
+
+      updateCompLabelsFrame();
+      updateFormDimLabels();
+      updateCompDimLabels();
+      updateFormVolumeLabel();
+    }
+  } catch (err) {
+    console.error('[materia] render error', err);
+    showBanner('Render error — refresh the page');
+  }
+  requestAnimationFrame(loop);
+}
+
+/* ===========================================================
+   Status banner
+   =========================================================== */
+function showBanner(msg) {
+  let b = document.getElementById('materia-banner');
+  if (!b) {
+    b = document.createElement('div'); b.id = 'materia-banner';
+    b.style.cssText = `
+      position: fixed; top: 12px; left: 50%; transform: translateX(-50%);
+      background: #c44e3d; color: #fff; padding: 8px 14px;
+      font-family: var(--mono); font-size: 12px; border-radius: 2px;
+      letter-spacing: 0.04em; z-index: 100;
+      box-shadow: 0 4px 12px rgba(0,0,0,0.4);
+    `;
+    document.body.appendChild(b);
+  }
+  b.textContent = msg; b.style.display = 'block';
+}
+function hideBanner() {
+  const b = document.getElementById('materia-banner'); if (b) b.style.display = 'none';
+}
+
+/* ===========================================================
+   About modal
+   =========================================================== */
+const aboutModal = document.getElementById('about-modal');
+const aboutBtn = document.getElementById('about-btn');
+const modalCloseBtn = document.getElementById('modal-close-btn');
+
+function showAbout() {
+  aboutModal.classList.add('open');
+}
+function hideAbout() {
+  aboutModal.classList.remove('open');
+}
+aboutBtn.addEventListener('click', showAbout);
+modalCloseBtn.addEventListener('click', hideAbout);
+aboutModal.addEventListener('click', (e) => {
+  if (e.target === aboutModal) hideAbout();
+});
+document.addEventListener('keydown', (e) => {
+  if (e.key === 'Escape' && aboutModal.classList.contains('open')) hideAbout();
+});
+
+// Always show on load. The "?" button in the toolbar reopens it any time.
+showAbout();
+
+/* ===========================================================
+   Boot
+   =========================================================== */
+resize();
+select.value = 'apollo';
+loadObject('apollo');
+loop();
+</script>
+
+</body>
+</html>
