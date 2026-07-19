@@ -10,7 +10,7 @@ Materia puts two synchronized 3D views next to each other:
 Both views share the same world scale (meters), so you can directly compare how much actual *stuff* is inside something against how big it appears. A skyscraper turns out to be mostly air; a rocket is almost entirely fuel.
 
 > Replace this line with a screenshot once the repo is live:
-> `![Materia screenshot](docs/screenshot.png)`
+> <img width="1909" height="832" alt="materia_bike_screenshot" src="https://github.com/user-attachments/assets/e196c3f4-7cda-4041-a76b-c9782e3790f1" />
 
 ---
 
